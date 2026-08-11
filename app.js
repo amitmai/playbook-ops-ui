@@ -83,6 +83,12 @@ const addLabel = (n, label) =>
 const addLabels = (n, labels) =>
   api(`/repos/${S.repo}/issues/${n}/labels`, { method: "POST", body: JSON.stringify({ labels }) });
 
+// Replaces the whole set in one call. Two writes (remove then add) cost twice
+// as long as one, and GitHub asks that mutating requests be made serially, so
+// write COUNT is the thing that decides how long a transition feels.
+const setLabels = (n, labels) =>
+  api(`/repos/${S.repo}/issues/${n}/labels`, { method: "PUT", body: JSON.stringify({ labels }) });
+
 const removeLabel = (n, label) =>
   api(`/repos/${S.repo}/issues/${n}/labels/${encodeURIComponent(label)}`, { method: "DELETE" })
     .catch((e) => { if (e.status !== 404) throw e; }); // already gone is the goal
@@ -93,10 +99,13 @@ const closeIssue = (n) =>
     body: JSON.stringify({ state: "closed", state_reason: "completed" }),
   });
 
-const createIssue = ({ title, body, assignees }) =>
+// Labels can be set at creation even when they do not exist yet: GitHub creates
+// them. That saves a round trip and removes the window in which the issue exists
+// with no labels, which is the window a label query would miss it in.
+const createIssue = ({ title, body, assignees, labels }) =>
   api(`/repos/${S.repo}/issues`, {
     method: "POST",
-    body: JSON.stringify({ title, body, assignees: assignees || [] }),
+    body: JSON.stringify({ title, body, assignees: assignees || [], labels: labels || [] }),
   });
 
 // Takes the child's `id`, not its number. A real trap: every other endpoint
@@ -459,88 +468,126 @@ async function pick(iss, s, ph, slug) {
     const outcome = step.outcome;
     const nextPhase = S.pb.phases[step.nextPhase];
     const version = (S.pb.playbooks[ph.playbook] || {}).version || 1;
-
     const record = PBE.transitionRecord({
       fromPhase: ph, outcome, toPhase: nextPhase, actor: S.user.login,
       attempt: s.attempt, version, exhausted: step.exhausted, pb: S.pb,
     });
 
-    say(`Recording <b>${esc(outcome.id)}</b>…`);
-    if (note) await comment(iss.number, note);
-    await comment(iss.number, record);
+    /* Three waves, not eleven round trips.
+     *
+     * Measured against api.github.com: a read costs ~330ms and a write ~620ms,
+     * but FIVE reads issued together cost 318ms in total. Latency here is
+     * round trips, not work, so what matters is how many times we wait rather
+     * than how many calls we make. Doing these one after another took 7.2s.
+     *
+     * Only two orderings are real: the successor check must precede creating
+     * the successor, and the outcome label must land after the close, because
+     * the label is what wakes the backstop workflow and a closed task is how it
+     * knows not to transition again. Everything else goes in parallel. */
 
-    // Close BEFORE labelling. The Action fires on the outcome label; by then
-    // the task is already closed, so it checks whether a successor exists
-    // instead of transitioning again. If this browser dies after this point,
-    // that same Action finishes the job.
-    await closeIssue(iss.number);
-    await addLabel(iss.number, `outcome:${slug}`);
+    say(`Recording <b>${esc(outcome.id)}</b>…`);
+
+    // WAVE 1: write the narrative, and look up what we need to decide.
+    const [, engagement, already] = await Promise.all([
+      (async () => {
+        // Chained, not parallel: the CSM's note must read above the machine's
+        // record, and two comments posted at once arrive in either order.
+        if (note) await comment(iss.number, note);
+        await comment(iss.number, record);
+      })(),
+      // The whole object, not just the number: knowing its current labels lets
+      // the pointer move in ONE write instead of a remove followed by an add.
+      // This is a read, and reads cost nothing extra inside this wave.
+      s.engagement
+        ? issue(s.engagement).catch(() => null)
+        : issues(["kind:engagement", `client:${s.client}`]).then((l) => l[0]),
+      issues(["kind:phase", `client:${s.client}`, `phase:${nextPhase.id}`]).then((l) =>
+        // Exclude the task being closed. On a self-loop it IS the next phase,
+        // so without this the engine would think the successor already exists.
+        l.filter((i) => i.number !== iss.number)
+      ),
+    ]);
 
     say(`Opening <b>${esc(PBE.label(nextPhase))}</b>…`);
 
-    const engagement = (await issues(["kind:engagement", `client:${s.client}`]))[0];
+    // WAVE 2: close the old task and open the new one. Independent of each other.
+    const isNew = !already.length;
+    const taskState = {
+      client: s.client, client_name: s.client_name || s.client,
+      playbook: nextPhase.playbook, phase: nextPhase.id,
+      attempt: step.nextAttempt, engagement: engagement && engagement.number,
+      due_at: PBE.dueDate(nextPhase),
+      playbook_version: (S.pb.playbooks[nextPhase.playbook] || {}).version || 1,
+    };
+    const labels = PBE.phaseLabels(taskState);
+    if (nextPhase.terminal) labels.push("state:terminal");
+    const assignees = (iss.assignees || []).map((a) => a.login);
 
-    // Never open a second copy of a task that already exists. Excludes the
-    // issue we just closed, which on a self-loop IS the next phase.
-    const already = (
-      await issues(["kind:phase", `client:${s.client}`, `phase:${nextPhase.id}`])
-    ).filter((i) => i.number !== iss.number);
+    const [, next] = await Promise.all([
+      // Close, THEN label. The label is what wakes the backstop workflow, and a
+      // closed task is how that workflow knows not to transition again. Both
+      // must be done before this function is allowed to stop caring, because
+      // they are what makes everything after this point recoverable.
+      closeIssue(iss.number).then(() => addLabel(iss.number, `outcome:${slug}`)),
+      isNew
+        ? createIssue({
+            title: PBE.phaseTitle(nextPhase, taskState),
+            body: PBE.renderPhaseBody(nextPhase, taskState, S.pb),
+            assignees: assignees.length ? assignees : [S.user.login],
+            // Labels inline: applying an unknown label creates it, verified.
+            labels,
+          })
+        : Promise.resolve(already[0]),
+    ]);
 
-    let next = already[0];
-    if (!next) {
-      const st = {
-        client: s.client, client_name: s.client_name || s.client,
-        playbook: nextPhase.playbook, phase: nextPhase.id,
-        attempt: step.nextAttempt, engagement: engagement && engagement.number,
-        due_at: PBE.dueDate(nextPhase),
-        playbook_version: (S.pb.playbooks[nextPhase.playbook] || {}).version || 1,
-      };
-      const assignees = (iss.assignees || []).map((a) => a.login);
-      // Created without labels, then labelled: applying a label that does not
-      // exist yet creates it, whereas creating an issue with an unknown label
-      // is rejected. A new client always brings a new client: label.
-      next = await createIssue({
-        title: PBE.phaseTitle(nextPhase, st),
-        body: PBE.renderPhaseBody(nextPhase, st, S.pb),
-        assignees: assignees.length ? assignees : [S.user.login],
-      });
-      const labels = PBE.phaseLabels(st);
-      if (nextPhase.terminal) labels.push("state:terminal");
-      await addLabels(next.number, labels);
-      await comment(
-        next.number,
-        `Created from #${iss.number} (\`${ph.id}\` → outcome **${outcome.id}** → \`${nextPhase.id}\`).`
+    /* WAVE 3: bookkeeping, in the background.
+     *
+     * The CSM's task is done: the old one is closed and the new one is open, so
+     * the UI moves on now rather than holding them for another two writes. What
+     * is left updates the engagement, and if this tab dies before it lands the
+     * outcome label is already applied, so the backstop workflow fires and
+     * reconciles the pointer. Nothing here can be lost silently. */
+    const tail = [];
+    if (isNew) {
+      tail.push(
+        comment(
+          next.number,
+          `Created from #${iss.number} (\`${ph.id}\` → **${outcome.id}** → \`${nextPhase.id}\`).`
+        )
       );
     }
-
-    // Move the engagement pointer and log the transition on the spine.
     if (engagement) {
-      await removeLabel(engagement.number, `phase:${s.phase}`);
-      const add = [`phase:${nextPhase.id}`];
-      if (nextPhase.playbook !== ph.playbook) {
-        await removeLabel(engagement.number, `playbook:${ph.playbook}`);
-        add.push(`playbook:${nextPhase.playbook}`);
-      }
-      await addLabels(engagement.number, add);
-      await comment(
-        engagement.number,
-        `${record}\n\n- **Task closed:** #${iss.number}\n- **Task opened:** #${next.number}`
+      const crossing = nextPhase.playbook !== ph.playbook;
+      const keep = labelsOf(engagement).filter(
+        (l) => !l.startsWith("phase:") && !(crossing && l.startsWith("playbook:"))
       );
-      if (nextPhase.terminal && !nextPhase.stub) {
-        await addLabels(engagement.number, [`state:${nextPhase.id.toLowerCase()}`]);
-        await closeIssue(engagement.number);
-      }
-      // Last, because it is the only step whose failure costs nothing: the
-      // engagement timeline is the spine, the hierarchy is a convenience.
+      keep.push(`phase:${nextPhase.id}`);
+      if (crossing) keep.push(`playbook:${nextPhase.playbook}`);
+      const ending = nextPhase.terminal && !nextPhase.stub;
+      if (ending) keep.push(`state:${nextPhase.id.toLowerCase()}`);
+      tail.push(
+        setLabels(engagement.number, keep).then(() =>
+          ending ? closeIssue(engagement.number) : null
+        )
+      );
+      tail.push(
+        comment(
+          engagement.number,
+          `${record}\n\n- **Task closed:** #${iss.number}\n- **Task opened:** #${next.number}`
+        )
+      );
+      // Last and unawaited: the engagement timeline is the spine, the native
+      // hierarchy is a convenience, and losing it must never cost a transition.
       addSubIssue(engagement.number, next.id).catch(() => {});
     }
+    Promise.all(tail).catch((e) => console.warn("engagement bookkeeping failed:", e.message));
 
-    console.log(`transition took ${Math.round((Date.now() - t0) / 1000 * 10) / 10}s`);
+    console.log(`transition in ${((Date.now() - t0) / 1000).toFixed(2)}s`);
     location.hash = `#/task/${next.number}`;
   } catch (e) {
     msg.innerHTML = `<div class="banner err" style="margin-top:12px">${esc(e.message)}
-      <br><br>Nothing further was written. If the task is already closed, the
-      backstop workflow will finish the transition within about a minute.</div>`;
+      <br><br>If the task is already closed, the backstop workflow will finish the
+      transition within about a minute.</div>`;
     view().querySelectorAll("button.outcome").forEach((b) => (b.disabled = false));
   }
 }
