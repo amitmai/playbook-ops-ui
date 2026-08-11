@@ -1,14 +1,23 @@
 /* Thin client for the playbook engine.
  *
- * This file knows how to talk to GitHub and how to draw three screens. It does
- * NOT know the playbook: which outcomes a phase offers, where each one routes,
- * which are self-loops — all of that is read from dist/playbooks.json, compiled
- * from the YAML by the engine and checked for staleness in CI.
+ * Screens and GitHub calls live here. The playbook itself does not: which
+ * outcomes a phase offers, where each routes, which are self-loops, the plan
+ * text a CSM reads, all of it is read from dist/playbooks.json, compiled from
+ * the YAML by the engine and checked for staleness in CI. There is one graph.
  *
- * That boundary is the point. Picking an outcome here does not compute anything;
- * it applies one label and waits. The Action does the routing, so a second UI,
- * an agent, or someone clicking the label by hand in GitHub all produce exactly
- * the same transition.
+ * Since 2026-08-11 this client PERFORMS the transition rather than waiting for
+ * a workflow to do it. Doing it through Actions took 14 to 19 seconds, nearly
+ * all of it spent booting a virtual machine to run a dictionary lookup. Here it
+ * takes about a second, and the writes are attributed to the real person
+ * instead of github-actions[bot].
+ *
+ * The Action still exists and still fires on the outcome label. It now finds
+ * the work already done and stops, or finishes it if this browser died half
+ * way. Applying a label by hand in GitHub therefore still works exactly as
+ * before, which is the property that made this design worth having.
+ *
+ * The mechanics of a transition are in engine.js, which also explains what this
+ * split costs.
  */
 
 const API = "https://api.github.com";
@@ -26,12 +35,6 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
   );
-
-// Must match slugify() in engine/start.py, or the UI would look for an
-// engagement under a different key than the one the engine created.
-const slugify = (name) =>
-  name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) ||
-  "client";
 
 /* ----------------------------------------------------------------- GitHub */
 
@@ -77,10 +80,31 @@ const comment = (n, body) =>
 const addLabel = (n, label) =>
   api(`/repos/${S.repo}/issues/${n}/labels`, { method: "POST", body: JSON.stringify({ labels: [label] }) });
 
-const dispatch = (workflow, inputs) =>
-  api(`/repos/${S.repo}/actions/workflows/${workflow}/dispatches`, {
+const addLabels = (n, labels) =>
+  api(`/repos/${S.repo}/issues/${n}/labels`, { method: "POST", body: JSON.stringify({ labels }) });
+
+const removeLabel = (n, label) =>
+  api(`/repos/${S.repo}/issues/${n}/labels/${encodeURIComponent(label)}`, { method: "DELETE" })
+    .catch((e) => { if (e.status !== 404) throw e; }); // already gone is the goal
+
+const closeIssue = (n) =>
+  api(`/repos/${S.repo}/issues/${n}`, {
+    method: "PATCH",
+    body: JSON.stringify({ state: "closed", state_reason: "completed" }),
+  });
+
+const createIssue = ({ title, body, assignees }) =>
+  api(`/repos/${S.repo}/issues`, {
     method: "POST",
-    body: JSON.stringify({ ref: "main", inputs }),
+    body: JSON.stringify({ title, body, assignees: assignees || [] }),
+  });
+
+// Takes the child's `id`, not its number. A real trap: every other endpoint
+// here takes numbers.
+const addSubIssue = (parent, childId) =>
+  api(`/repos/${S.repo}/issues/${parent}/sub_issues`, {
+    method: "POST",
+    body: JSON.stringify({ sub_issue_id: childId }),
   });
 
 const renderMarkdown = (text) =>
@@ -277,59 +301,65 @@ async function boardScreen() {
     if (!name) return;
     const btn = $("#start");
     btn.disabled = true;
-    $("#startmsg").innerHTML = `<p class="meta" style="margin-top:10px"><span class="spin"></span>Asking the engine to open the engagement…</p>`;
+    const out = $("#startmsg");
+    const say = (m) =>
+      (out.innerHTML = `<p class="meta" style="margin-top:10px"><span class="spin"></span>${m}</p>`);
+
     try {
-      await dispatch("start.yml", { client_name: name, playbook, assignee: S.user.login });
-      const slug = slugify(name);
-      const tick = waiting($("#startmsg"), "Opening the engagement,", "start.yml");
-      tick(0);
-      const found = await pollFor(
-        () => issues(["kind:phase", `client:${slug}`]),
-        (list) => list.length > 0,
-        { tries: 50, waitMs: 1200, onTick: tick }
-      );
-      if (found) {
-        location.hash = `#/task/${found[0].number}`;
-      } else {
-        $("#startmsg").innerHTML = `<div class="banner warn" style="margin-top:10px">
-          The workflow was dispatched but no task has appeared yet.
-          <a href="https://github.com/${S.repo}/actions/workflows/start.yml" target="_blank" rel="noopener">Check the run</a>,
-          then reload.</div>`;
+      const slug = PBE.slugify(name);
+      const pbook = S.pb.playbooks[playbook];
+      const entry = S.pb.phases[pbook.entry];
+
+      // One open engagement per client, full stop. Two would mean two live
+      // answers to "where is this client".
+      const open = await issues(["kind:engagement", `client:${slug}`]);
+      if (open.length) {
+        out.innerHTML = `<div class="banner warn" style="margin-top:10px">
+          ${esc(name)} already has an open engagement,
+          <a href="#/task/${open[0].number}">#${open[0].number}</a>. Not starting a second one.</div>`;
+        return;
       }
+
+      say(`Opening the engagement…`);
+      const engState = {
+        client: slug, client_name: name, playbook, phase: entry.id,
+        attempt: 1, playbook_version: pbook.version,
+      };
+      const engagement = await createIssue({
+        title: PBE.engagementTitle(engState, S.pb),
+        body: PBE.renderEngagementBody(engState, S.pb),
+        assignees: [S.user.login],
+      });
+      await addLabels(engagement.number, [
+        "kind:engagement", `client:${slug}`, `playbook:${playbook}`, `phase:${entry.id}`,
+      ]);
+
+      say(`Opening <b>${esc(PBE.label(entry))}</b>…`);
+      const taskState = {
+        client: slug, client_name: name, playbook: entry.playbook, phase: entry.id,
+        attempt: 1, engagement: engagement.number, due_at: PBE.dueDate(entry),
+        playbook_version: pbook.version,
+      };
+      const first = await createIssue({
+        title: PBE.phaseTitle(entry, taskState),
+        body: PBE.renderPhaseBody(entry, taskState, S.pb),
+        assignees: [S.user.login],
+      });
+      await addLabels(first.number, PBE.phaseLabels(taskState));
+
+      await comment(
+        engagement.number,
+        `Engagement opened by @${S.user.login} on **${pbook.title}** (v${pbook.version}).\n\n` +
+          `First task: #${first.number} — **${PBE.label(entry)}**`
+      );
+      addSubIssue(engagement.number, first.id).catch(() => {});
+
+      location.hash = `#/task/${first.number}`;
     } catch (e) {
-      $("#startmsg").innerHTML = `<div class="banner err" style="margin-top:10px">${esc(e.message)}</div>`;
+      out.innerHTML = `<div class="banner err" style="margin-top:10px">${esc(e.message)}</div>`;
     } finally {
       btn.disabled = false;
     }
-  };
-}
-
-/* Check first, then wait. The old order slept a full interval before looking,
- * which added dead time to every single action for no reason. `onTick` reports
- * elapsed seconds so a wait always visibly counts up rather than sitting on a
- * spinner that could equally mean "working" or "dead". */
-async function pollFor(fetcher, done, { tries = 40, waitMs = 1200, onTick } = {}) {
-  const started = Date.now();
-  for (let i = 0; i < tries; i++) {
-    try {
-      const result = await fetcher();
-      if (done(result)) return result;
-    } catch (e) {
-      if (e.status === 401 || e.status === 403) throw e; // never spin on a bad token
-    }
-    if (onTick) onTick(Math.round((Date.now() - started) / 1000));
-    await new Promise((r) => setTimeout(r, waitMs));
-  }
-  return null;
-}
-
-const runsLink = (wf) => `https://github.com/${S.repo}/actions/workflows/${wf}`;
-
-function waiting(el, label, wf) {
-  const link = `<a href="${runsLink(wf)}" target="_blank" rel="noopener">watch the run</a>`;
-  return (secs) => {
-    el.innerHTML = `<p class="meta" style="margin-top:12px"><span class="spin"></span>${label}
-      <b>${secs}s</b> ${secs > 25 ? `&middot; taking longer than usual, ${link}` : ""}</p>`;
   };
 }
 
@@ -414,61 +444,103 @@ async function taskScreen(number) {
 }
 
 async function pick(iss, s, ph, slug) {
-  const outcome = ph.outcomes.find((o) => o.slug === slug);
   const note = $("#note")?.value.trim();
   view().querySelectorAll("button.outcome").forEach((b) => (b.disabled = true));
   const msg = $("#pickmsg");
-  msg.innerHTML = `<p class="meta" style="margin-top:12px"><span class="spin"></span>Recording <b>${esc(outcome.id)}</b>…</p>`;
+  const t0 = Date.now();
+  const say = (m) =>
+    (msg.innerHTML = `<p class="meta" style="margin-top:12px"><span class="spin"></span>${m}</p>`);
 
   try {
-    // Notes first, so the reasoning is already on the issue when the engine
-    // appends the transition record underneath it.
-    if (note) await comment(iss.number, note);
+    // Routing decided locally, from the same compiled graph the Python engine
+    // reads. An outcome that is not a declared edge throws here and nothing is
+    // written, which is the same reject-by-default rule the Action applies.
+    const step = PBE.step(S.pb, ph.id, slug, s.attempt);
+    const outcome = step.outcome;
+    const nextPhase = S.pb.phases[step.nextPhase];
+    const version = (S.pb.playbooks[ph.playbook] || {}).version || 1;
 
-    // The transition itself is one label. Everything after this happens in the
-    // Action — which is why clicking the same label directly in GitHub does the
-    // same thing.
+    const record = PBE.transitionRecord({
+      fromPhase: ph, outcome, toPhase: nextPhase, actor: S.user.login,
+      attempt: s.attempt, version, exhausted: step.exhausted, pb: S.pb,
+    });
+
+    say(`Recording <b>${esc(outcome.id)}</b>…`);
+    if (note) await comment(iss.number, note);
+    await comment(iss.number, record);
+
+    // Close BEFORE labelling. The Action fires on the outcome label; by then
+    // the task is already closed, so it checks whether a successor exists
+    // instead of transitioning again. If this browser dies after this point,
+    // that same Action finishes the job.
+    await closeIssue(iss.number);
     await addLabel(iss.number, `outcome:${slug}`);
 
-    // Say immediately where the playbook sends this, so the wait is informative
-    // rather than blank. This is a DISPLAY of the compiled playbook, not a
-    // decision: the engine still routes, and if it rejects the outcome the
-    // banner below replaces this with the real reason.
-    const dest = S.pb.phases[outcome.next];
-    const destLabel = outcome.self_loop
-      ? `another attempt at ${esc(ph.label)}`
-      : esc(dest ? dest.label : outcome.next);
-    const tick = waiting(msg, `Recorded <b>${esc(outcome.id)}</b>. Opening ${destLabel},`, "advance.yml");
-    tick(0);
+    say(`Opening <b>${esc(PBE.label(nextPhase))}</b>…`);
 
-    const closed = await pollFor(() => issue(iss.number), (i) => i.state === "closed", {
-      tries: 50, waitMs: 1200, onTick: tick,
-    });
-    if (!closed) {
-      const why = await issue(iss.number).catch(() => null);
-      const rejected =
-        why && !(why.labels || []).some((l) => (l.name || l) === `outcome:${slug}`);
-      msg.innerHTML = `<div class="banner ${rejected ? "err" : "warn"}" style="margin-top:12px">
-        ${rejected
-          ? "The engine <b>rejected</b> this outcome and removed the label. The reason is a comment on the issue."
-          : "The label is on, but the task has not closed."}
-        <a href="${runsLink("advance.yml")}" target="_blank" rel="noopener">Check the run</a>.</div>`;
-      return;
+    const engagement = (await issues(["kind:engagement", `client:${s.client}`]))[0];
+
+    // Never open a second copy of a task that already exists. Excludes the
+    // issue we just closed, which on a self-loop IS the next phase.
+    const already = (
+      await issues(["kind:phase", `client:${s.client}`, `phase:${nextPhase.id}`])
+    ).filter((i) => i.number !== iss.number);
+
+    let next = already[0];
+    if (!next) {
+      const st = {
+        client: s.client, client_name: s.client_name || s.client,
+        playbook: nextPhase.playbook, phase: nextPhase.id,
+        attempt: step.nextAttempt, engagement: engagement && engagement.number,
+        due_at: PBE.dueDate(nextPhase),
+        playbook_version: (S.pb.playbooks[nextPhase.playbook] || {}).version || 1,
+      };
+      const assignees = (iss.assignees || []).map((a) => a.login);
+      // Created without labels, then labelled: applying a label that does not
+      // exist yet creates it, whereas creating an issue with an unknown label
+      // is rejected. A new client always brings a new client: label.
+      next = await createIssue({
+        title: PBE.phaseTitle(nextPhase, st),
+        body: PBE.renderPhaseBody(nextPhase, st, S.pb),
+        assignees: assignees.length ? assignees : [S.user.login],
+      });
+      const labels = PBE.phaseLabels(st);
+      if (nextPhase.terminal) labels.push("state:terminal");
+      await addLabels(next.number, labels);
+      await comment(
+        next.number,
+        `Created from #${iss.number} (\`${ph.id}\` → outcome **${outcome.id}** → \`${nextPhase.id}\`).`
+      );
     }
 
-    const next = await pollFor(
-      () => issues(["kind:phase", `client:${s.client}`]),
-      (list) => list.length > 0,
-      { tries: 25, waitMs: 1000, onTick: tick }
-    );
-    if (next && next.length) {
-      location.hash = `#/task/${next[0].number}`;
-    } else {
-      msg.innerHTML = `<div class="banner ok" style="margin-top:12px">Recorded. No open task follows —
-        this branch has reached a terminal state. <a href="#/">Back to the board</a>.</div>`;
+    // Move the engagement pointer and log the transition on the spine.
+    if (engagement) {
+      await removeLabel(engagement.number, `phase:${s.phase}`);
+      const add = [`phase:${nextPhase.id}`];
+      if (nextPhase.playbook !== ph.playbook) {
+        await removeLabel(engagement.number, `playbook:${ph.playbook}`);
+        add.push(`playbook:${nextPhase.playbook}`);
+      }
+      await addLabels(engagement.number, add);
+      await comment(
+        engagement.number,
+        `${record}\n\n- **Task closed:** #${iss.number}\n- **Task opened:** #${next.number}`
+      );
+      if (nextPhase.terminal && !nextPhase.stub) {
+        await addLabels(engagement.number, [`state:${nextPhase.id.toLowerCase()}`]);
+        await closeIssue(engagement.number);
+      }
+      // Last, because it is the only step whose failure costs nothing: the
+      // engagement timeline is the spine, the hierarchy is a convenience.
+      addSubIssue(engagement.number, next.id).catch(() => {});
     }
+
+    console.log(`transition took ${Math.round((Date.now() - t0) / 1000 * 10) / 10}s`);
+    location.hash = `#/task/${next.number}`;
   } catch (e) {
-    msg.innerHTML = `<div class="banner err" style="margin-top:12px">${esc(e.message)}</div>`;
+    msg.innerHTML = `<div class="banner err" style="margin-top:12px">${esc(e.message)}
+      <br><br>Nothing further was written. If the task is already closed, the
+      backstop workflow will finish the transition within about a minute.</div>`;
     view().querySelectorAll("button.outcome").forEach((b) => (b.disabled = false));
   }
 }
