@@ -1,0 +1,140 @@
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --ink: #14161a;
+  --ink-2: #5b6270;
+  --ink-3: #8b93a1;
+  --line: #e3e6ea;
+  --accent: #1f6feb;
+  --accent-ink: #ffffff;
+  --warn: #9a6700;
+  --warn-bg: #fff8c5;
+  --danger: #cf222e;
+  --ok: #1a7f37;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 22, 26, 0.06), 0 4px 12px rgba(16, 22, 26, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --ink: #e6edf3;
+    --ink-2: #9198a1;
+    --ink-3: #6e7681;
+    --line: #262c36;
+    --accent: #4493f8;
+    --warn: #d29922;
+    --warn-bg: #2b2003;
+    --danger: #f85149;
+    --ok: #3fb950;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 64px; }
+
+header.top {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+  margin-bottom: 20px;
+}
+header.top .wrap { display: flex; align-items: center; gap: 12px; padding-bottom: 0; }
+header.top h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+header.top .spacer { flex: 1; }
+header.top a, header.top button.link {
+  color: var(--ink-2); text-decoration: none; font-size: 13px;
+  background: none; border: 0; cursor: pointer; padding: 4px; font-family: inherit;
+}
+header.top a:hover, header.top button.link:hover { color: var(--accent); }
+
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); margin: 28px 0 10px; font-weight: 600; }
+h3 { font-size: 17px; margin: 0 0 4px; letter-spacing: -0.01em; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
+}
+
+a.card { display: block; color: inherit; text-decoration: none; }
+a.card:hover { border-color: var(--accent); }
+
+.meta { color: var(--ink-2); font-size: 13px; }
+.meta b { color: var(--ink); font-weight: 600; }
+.dim { color: var(--ink-3); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+.pill {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  background: var(--bg); border: 1px solid var(--line);
+  font-size: 12px; color: var(--ink-2); margin-right: 6px;
+}
+.pill.due { color: var(--warn); border-color: var(--warn); }
+.pill.over { color: var(--danger); border-color: var(--danger); }
+.pill.stub { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+
+label { display: block; font-size: 13px; color: var(--ink-2); margin: 12px 0 4px; font-weight: 500; }
+
+input, select, textarea {
+  width: 100%; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--ink);
+  font: inherit;
+}
+textarea { min-height: 96px; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+
+button {
+  font: inherit; font-weight: 550; cursor: pointer;
+  border-radius: 8px; border: 1px solid var(--line);
+  background: var(--card); color: var(--ink);
+  padding: 10px 14px;
+}
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); width: 100%; padding: 12px; margin-top: 16px; }
+button.primary:hover:not(:disabled) { color: var(--accent-ink); filter: brightness(1.08); }
+
+/* Outcome pickers — the one control that matters, so it gets room to breathe
+   and a tap target that works on a phone. */
+.outcomes { display: grid; gap: 8px; margin-top: 4px; }
+button.outcome {
+  text-align: left; padding: 12px 14px; display: block; width: 100%;
+}
+button.outcome .oid { font-weight: 600; display: block; }
+button.outcome .omeans { color: var(--ink-2); font-size: 13px; font-weight: 400; display: block; margin-top: 2px; }
+button.outcome .onext { color: var(--ink-3); font-size: 12px; display: block; margin-top: 4px; }
+button.outcome.loop .onext { color: var(--warn); }
+
+.banner { padding: 12px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 12px; border: 1px solid; }
+.banner.warn { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+.banner.err { background: transparent; border-color: var(--danger); color: var(--danger); }
+.banner.ok { background: transparent; border-color: var(--ok); color: var(--ok); }
+
+.body-md { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; font-size: 14px; overflow-x: auto; }
+.body-md h1, .body-md h2, .body-md h3 { font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--ink); margin: 16px 0 6px; }
+.body-md table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.body-md th, .body-md td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+.body-md code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.body-md blockquote { margin: 10px 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--ink-2); }
+
+.spin { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: -2px; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty { color: var(--ink-3); font-size: 14px; padding: 20px 0; }
