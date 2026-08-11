@@ -1,4 +1,4 @@
-/* Thin client for the playbook engine.
+/* The promptbook, wired to GitHub.
  *
  * Screens and GitHub calls live here. The playbook itself does not: which
  * outcomes a phase offers, where each routes, which are self-loops, the plan
@@ -160,310 +160,440 @@ function stateOf(iss) {
 
 const stripState = (body) => (body || "").replace(/<!--\s*PLAYBOOK-STATE[\s\S]*?-->/g, "").trim();
 
-function duePill(due) {
-  if (!due) return "";
-  const days = Math.round((new Date(due + "T00:00:00") - new Date().setHours(0, 0, 0, 0)) / 86400000);
-  if (days < 0) return `<span class="pill over">${-days}d overdue</span>`;
-  if (days === 0) return `<span class="pill due">due today</span>`;
-  if (days <= 2) return `<span class="pill due">due in ${days}d</span>`;
-  return `<span class="pill">due ${due}</span>`;
+/* ------------------------------------------------------------------ chrome */
+
+const flashEl = () => document.getElementById("flash");
+let flashTimer;
+function flash(msg) {
+  const el = flashEl();
+  el.textContent = msg;
+  el.classList.add("on");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => el.classList.remove("on"), 2600);
 }
 
-/* --------------------------------------------------------------- screens */
+/* Drawn, one stroke weight, square caps. No glyphs standing in for icons. */
+const ICON = {
+  next: `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M2 8h11M9.5 4.5 13 8l-3.5 3.5"/></svg>`,
+  back: `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M14 8H3M6.5 4.5 3 8l3.5 3.5"/></svg>`,
+  plus: `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M8 3v10M3 8h10"/></svg>`,
+  loop: `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3 8a5 5 0 0 1 8.5-3.5M13 8a5 5 0 0 1-8.5 3.5"/><path d="M11.5 2v2.8h-2.8M4.5 14v-2.8h2.8"/></svg>`,
+  end: `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3 8.5 6.5 12 13 4.5"/></svg>`,
+};
 
-function chrome() {
-  const who = S.user ? `@${S.user.login}` : "";
-  $("#top").innerHTML = `
-    <div class="wrap">
-      <h1><a href="#/" style="color:inherit">Playbook Ops</a></h1>
-      <span class="spacer"></span>
-      <span class="dim mono">${esc(S.repo)}</span>
-      <span class="dim">${esc(who)}</span>
-      <a href="#/settings">settings</a>
-    </div>`;
+const TAPE = ["a", "b", "c"];
+const tapeFor = (playbook) => {
+  const names = Object.keys(S.pb ? S.pb.playbooks : {}).sort();
+  const i = names.indexOf(playbook);
+  return TAPE[i < 0 ? 0 : i % TAPE.length];
+};
+
+const today = () => new Date().setHours(0, 0, 0, 0);
+
+/* Urgency is a word AND a rule weight AND a position, never colour alone. */
+function dueInfo(due) {
+  if (!due) return { key: "undated", label: "No date", word: "no date", order: 4, late: false };
+  const days = Math.round((new Date(due + "T00:00:00") - today()) / 86400000);
+  if (days < 0)
+    return { key: "late", label: "Late", word: `${-days} day${-days === 1 ? "" : "s"} late`, order: 0, late: true };
+  if (days === 0) return { key: "today", label: "Today", word: "due today", order: 1, late: false };
+  if (days <= 7)
+    return { key: "week", label: "This week", word: `in ${days} day${days === 1 ? "" : "s"}`, order: 2, late: false };
+  return { key: "later", label: "Later", word: `${due}`, order: 3, late: false };
 }
 
-function settingsScreen() {
-  view().innerHTML = `
-    <h2>Connection</h2>
-    <div class="card">
-      <p class="meta">This page talks to the GitHub API directly from your browser, with
-      <b>your</b> token — so every comment, label and transition is attributed to your
-      account in the issue timeline, not to a shared bot.</p>
-      <label for="repo">Engine repo</label>
-      <input id="repo" placeholder="amitmai/causematch-cs-poc" value="${esc(S.repo)}">
-      <label for="token">Fine-grained personal access token</label>
-      <input id="token" type="password" placeholder="github_pat_..." value="${esc(S.token)}">
-      <p class="meta dim" style="margin-top:8px">
-        Create one at github.com/settings/personal-access-tokens — scope it to the engine
-        repo only, with <b>Issues: read &amp; write</b>, <b>Contents: read</b> and
-        <b>Actions: read &amp; write</b>. It is stored in this browser's localStorage and
-        sent only to api.github.com.
-      </p>
-      <button class="primary" id="save">Save and connect</button>
-      <div id="msg"></div>
-    </div>`;
+const GROUPS = ["late", "today", "week", "later", "undated"];
+const GROUP_LABEL = { late: "Late", today: "Today", week: "This week", later: "Later", undated: "No date" };
 
-  $("#save").onclick = async () => {
-    S.repo = $("#repo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "");
-    S.token = $("#token").value.trim();
-    localStorage.setItem("repo", S.repo);
-    localStorage.setItem("token", S.token);
-    $("#msg").innerHTML = `<p class="meta"><span class="spin"></span>Checking…</p>`;
-    try {
-      S.user = await api("/user");
-      await loadPlaybooks();
-      chrome();
-      location.hash = "#/";
-    } catch (e) {
-      $("#msg").innerHTML = `<div class="banner err" style="margin-top:12px">${esc(e.message)}${
-        e.status === 404
-          ? "<br><br>A 404 here usually means the token cannot see the repo — check that it was scoped to this repository and that <b>Contents: read</b> is granted."
-          : ""
-      }</div>`;
-    }
-  };
+function cueRow(t, s, { compact = false, current = false } = {}) {
+  const ph = (S.pb.phases || {})[s.phase] || {};
+  const d = dueInfo(s.due_at);
+  return `<button class="cue ${d.late ? "is-late" : ""} ${current ? "current" : ""}"
+      data-go="#/cue/${t.number}" aria-label="${esc(s.client_name)}, ${esc(ph.label || s.phase)}, ${esc(d.word)}">
+    <span class="no">${t.number}</span>
+    <span>
+      <span class="client">${esc(s.client_name)}</span>
+      <span class="phase">${esc(ph.label || s.phase)}${
+        s.attempt > 1 ? ` · attempt ${s.attempt}${ph.max_attempts ? ` of ${ph.max_attempts}` : ""}` : ""
+      }</span>
+      ${compact ? `<span class="when">${esc(d.word)}</span>` : ""}
+    </span>
+    ${compact ? "" : `<span class="when">${esc(d.word)}</span>`}
+  </button>`;
 }
 
-async function boardScreen() {
-  view().innerHTML = `<p class="meta"><span class="spin"></span>Loading…</p>`;
-  const [engagements, tasks] = await Promise.all([
-    issues(["kind:engagement"]),
+function renderRail(tasks, currentNumber) {
+  const rail = document.getElementById("rail");
+  if (!rail) return;
+  const rows = tasks
+    .map((t) => ({ t, s: stateOf(t) }))
+    .sort(byUrgency)
+    .map(({ t, s }) => cueRow(t, s, { compact: true, current: t.number === currentNumber }))
+    .join("");
+  rail.innerHTML = `
+    <div class="masthead">
+      <div>
+        <a href="#/" class="sheet-title" style="text-decoration:none;color:inherit;font-size:19px">Running order</a>
+        <div class="who">${tasks.length} open</div>
+      </div>
+    </div>
+    <div class="cues">${rows}</div>`;
+}
+
+const byUrgency = (a, b) => {
+  const da = dueInfo(a.s.due_at), db = dueInfo(b.s.due_at);
+  if (da.order !== db.order) return da.order - db.order;
+  return (a.s.due_at || "9999").localeCompare(b.s.due_at || "9999");
+};
+
+/* ------------------------------------------------------------ running order */
+
+async function runningOrder() {
+  view().className = "stage solo";
+  const rail = document.getElementById("rail");
+  if (rail) rail.innerHTML = "";
+
+  view().innerHTML = `<div class="masthead"><div><h1 class="sheet-title">Running order</h1>
+    <div class="who">reading the book…</div></div></div>`;
+
+  const [tasks, engagements] = await Promise.all([
     issues(["kind:phase"]),
+    issues(["kind:engagement"]),
   ]);
 
-  const byClient = new Map();
-  for (const t of tasks) {
-    const s = stateOf(t);
-    if (!byClient.has(s.client)) byClient.set(s.client, []);
-    byClient.get(s.client).push({ t, s });
-  }
+  const mineOnly = localStorage.getItem("mine") !== "0";
+  const rows = tasks
+    .map((t) => ({ t, s: stateOf(t) }))
+    .filter(({ t }) => !mineOnly || (t.assignees || []).some((a) => a.login === S.user.login))
+    .sort(byUrgency);
 
-  const mine = tasks.filter((t) => (t.assignees || []).some((a) => a.login === S.user?.login));
+  const buckets = {};
+  for (const r of rows) (buckets[dueInfo(r.s.due_at).key] ||= []).push(r);
 
-  const taskCard = (t, s) => {
-    const ph = S.pb.phases[s.phase] || {};
-    return `<a class="card" href="#/task/${t.number}">
-      <h3>${esc(s.client_name)}</h3>
-      <div class="meta"><b>${esc(ph.label || s.phase)}</b> · ${esc(ph.task_type || "")}
-        ${s.attempt > 1 ? ` · attempt ${s.attempt}` : ""}</div>
-      <div style="margin-top:8px">
-        ${duePill(s.due_at)}
-        <span class="pill mono">${esc(s.phase)}</span>
-        <span class="pill">${esc(S.pb.playbooks[s.playbook]?.title || s.playbook)}</span>
-        ${ph.stub ? `<span class="pill stub">stub</span>` : ""}
+  const dateLine = new Date().toLocaleDateString(undefined, {
+    weekday: "long", day: "numeric", month: "long",
+  });
+
+  const sheet = GROUPS.filter((g) => buckets[g] && buckets[g].length)
+    .map(
+      (g) => `<div class="group ${g === "late" ? "is-late" : ""}">
+          <h2>${GROUP_LABEL[g]}</h2>
+          <span class="count">${buckets[g].length}</span>
+        </div>
+        <div class="cues">${buckets[g].map(({ t, s }) => cueRow(t, s)).join("")}</div>`
+    )
+    .join("");
+
+  view().innerHTML = `
+    <div class="masthead">
+      <div>
+        <h1 class="sheet-title">Running order</h1>
+        <div class="who">${esc(dateLine)} · ${rows.length} cue${rows.length === 1 ? "" : "s"}${
+          mineOnly ? " assigned to you" : " across the team"
+        }</div>
       </div>
-    </a>`;
-  };
+      <div class="acts">
+        <div class="seg" role="group" aria-label="Whose cues">
+          <button data-mine="1" aria-pressed="${mineOnly}">Mine</button>
+          <button data-mine="0" aria-pressed="${!mineOnly}">All</button>
+        </div>
+        <button class="btn quiet" id="newclient">${ICON.plus} Client</button>
+      </div>
+    </div>
+    <div id="startpanel"></div>
+    ${
+      rows.length
+        ? sheet
+        : `<div class="empty"><h2>Nothing is called</h2>
+             <p>${
+               mineOnly && tasks.length
+                 ? "There are open cues, but none are assigned to you. Switch to All to see the team's book."
+                 : "No client is on a playbook yet. Put one on and the first cue appears here."
+             }</p></div>`
+    }
+    ${
+      engagements.length
+        ? `<div class="group"><h2>Engagements</h2><span class="count">${engagements.length}</span></div>
+           <div class="cues">${engagements
+             .map((e) => {
+               const s = stateOf(e);
+               const ph = (S.pb.phases || {})[s.phase] || {};
+               return `<a class="cue" href="https://github.com/${S.repo}/issues/${e.number}" target="_blank" rel="noopener">
+                 <span class="no">${e.number}</span>
+                 <span><span class="client">${esc(s.client_name)}</span>
+                 <span class="phase">now at ${esc(ph.label || s.phase)}</span></span>
+                 <span class="when">${esc((S.pb.playbooks[s.playbook] || {}).title || s.playbook)}</span>
+               </a>`;
+             })
+             .join("")}</div>`
+        : ""
+    }`;
 
-  const sortByDue = (a, b) => (a.s.due_at || "9999").localeCompare(b.s.due_at || "9999");
+  view().querySelectorAll("[data-mine]").forEach((b) => {
+    b.onclick = () => { localStorage.setItem("mine", b.dataset.mine); runningOrder(); };
+  });
+  $("#newclient").onclick = () => startPanel();
+  wireGo();
+}
 
-  let html = `
-    <div class="card">
-      <h3>Start a client on a playbook</h3>
-      <label for="cname">Client name</label>
-      <input id="cname" placeholder="Acme Foundation">
+function wireGo() {
+  document.querySelectorAll("[data-go]").forEach((el) => {
+    el.onclick = () => { location.hash = el.dataset.go; };
+  });
+}
+
+/* ------------------------------------------------------------- new client */
+
+function startPanel() {
+  const host = $("#startpanel");
+  if (!host || host.dataset.open === "1") return;
+  host.dataset.open = "1";
+  host.innerHTML = `
+    <div class="panel">
+      <h2>Put a client on a playbook</h2>
+      <p class="lede">This opens their engagement and calls the first cue.</p>
+      <label for="cname">Client</label>
+      <input id="cname" type="text" placeholder="Acme Foundation" autocomplete="off">
       <label for="pbook">Playbook</label>
       <select id="pbook">
         ${Object.values(S.pb.playbooks)
           .filter((p) => p.entry && S.pb.phases[p.entry] && !S.pb.phases[p.entry].stub)
-          .map((p) => `<option value="${esc(p.name)}">${esc(p.title)} — starts at ${esc(S.pb.phases[p.entry].label)}</option>`)
+          .map((p) => `<option value="${esc(p.name)}">${esc(p.title)} — opens at ${esc(PBE.label(S.pb.phases[p.entry]))}</option>`)
           .join("")}
       </select>
-      <button class="primary" id="start">Open the first task</button>
+      <div style="display:flex;gap:8px;margin-top:18px">
+        <button class="btn solid" id="start">Open the first cue</button>
+        <button class="btn quiet" id="cancelstart">Cancel</button>
+      </div>
       <div id="startmsg"></div>
     </div>`;
-
-  if (mine.length) {
-    html += `<h2>Your queue (${mine.length})</h2>` +
-      mine.map((t) => ({ t, s: stateOf(t) })).sort(sortByDue).map(({ t, s }) => taskCard(t, s)).join("");
-  }
-
-  html += `<h2>Engagements in flight (${engagements.length})</h2>`;
-  if (!engagements.length) {
-    html += `<p class="empty">Nothing running. Start a client above.</p>`;
-  } else {
-    for (const e of engagements) {
-      const s = stateOf(e);
-      const open = (byClient.get(s.client) || []).sort(sortByDue);
-      html += `<div class="card">
-        <h3>${esc(s.client_name)}</h3>
-        <div class="meta">${esc(S.pb.playbooks[s.playbook]?.title || s.playbook)} ·
-          now at <b>${esc(S.pb.phases[s.phase]?.label || s.phase)}</b> ·
-          <a href="https://github.com/${S.repo}/issues/${e.number}" target="_blank" rel="noopener">#${e.number}</a>
-        </div>
-        ${open.length
-          ? `<div style="margin-top:10px">${open.map(({ t, s: ts }) =>
-              `<a href="#/task/${t.number}" class="pill" style="color:var(--accent);border-color:var(--accent)">${esc(
-                S.pb.phases[ts.phase]?.label || ts.phase
-              )} →</a>`).join("")}</div>`
-          : `<p class="meta dim" style="margin-top:8px">No open task — the engine may still be creating it.</p>`}
-      </div>`;
-    }
-  }
-
-  view().innerHTML = html;
-
-  $("#start").onclick = async () => {
-    const name = $("#cname").value.trim();
-    const playbook = $("#pbook").value;
-    if (!name) return;
-    const btn = $("#start");
-    btn.disabled = true;
-    const out = $("#startmsg");
-    const say = (m) =>
-      (out.innerHTML = `<p class="meta" style="margin-top:10px"><span class="spin"></span>${m}</p>`);
-
-    try {
-      const slug = PBE.slugify(name);
-      const pbook = S.pb.playbooks[playbook];
-      const entry = S.pb.phases[pbook.entry];
-
-      // One open engagement per client, full stop. Two would mean two live
-      // answers to "where is this client".
-      const open = await issues(["kind:engagement", `client:${slug}`]);
-      if (open.length) {
-        out.innerHTML = `<div class="banner warn" style="margin-top:10px">
-          ${esc(name)} already has an open engagement,
-          <a href="#/task/${open[0].number}">#${open[0].number}</a>. Not starting a second one.</div>`;
-        return;
-      }
-
-      say(`Opening the engagement…`);
-      const engState = {
-        client: slug, client_name: name, playbook, phase: entry.id,
-        attempt: 1, playbook_version: pbook.version,
-      };
-      const engagement = await createIssue({
-        title: PBE.engagementTitle(engState, S.pb),
-        body: PBE.renderEngagementBody(engState, S.pb),
-        assignees: [S.user.login],
-      });
-      await addLabels(engagement.number, [
-        "kind:engagement", `client:${slug}`, `playbook:${playbook}`, `phase:${entry.id}`,
-      ]);
-
-      say(`Opening <b>${esc(PBE.label(entry))}</b>…`);
-      const taskState = {
-        client: slug, client_name: name, playbook: entry.playbook, phase: entry.id,
-        attempt: 1, engagement: engagement.number, due_at: PBE.dueDate(entry),
-        playbook_version: pbook.version,
-      };
-      const first = await createIssue({
-        title: PBE.phaseTitle(entry, taskState),
-        body: PBE.renderPhaseBody(entry, taskState, S.pb),
-        assignees: [S.user.login],
-      });
-      await addLabels(first.number, PBE.phaseLabels(taskState));
-
-      await comment(
-        engagement.number,
-        `Engagement opened by @${S.user.login} on **${pbook.title}** (v${pbook.version}).\n\n` +
-          `First task: #${first.number} — **${PBE.label(entry)}**`
-      );
-      addSubIssue(engagement.number, first.id).catch(() => {});
-
-      location.hash = `#/task/${first.number}`;
-    } catch (e) {
-      out.innerHTML = `<div class="banner err" style="margin-top:10px">${esc(e.message)}</div>`;
-    } finally {
-      btn.disabled = false;
-    }
-  };
+  $("#cname").focus();
+  $("#cancelstart").onclick = () => { host.dataset.open = "0"; host.innerHTML = ""; };
+  $("#start").onclick = startClient;
 }
 
-async function taskScreen(number) {
-  view().innerHTML = `<p class="meta"><span class="spin"></span>Loading task…</p>`;
-  const iss = await issue(number);
+async function startClient() {
+  const name = $("#cname").value.trim();
+  const playbook = $("#pbook").value;
+  if (!name) { $("#cname").focus(); return; }
+  const btn = $("#start");
+  btn.disabled = true;
+  const out = $("#startmsg");
+  const say = (m) => (out.innerHTML = `<div class="standby"><span class="dot"></span>${m}</div>`);
+
+  try {
+    const slug = PBE.slugify(name);
+    const pbook = S.pb.playbooks[playbook];
+    const entry = S.pb.phases[pbook.entry];
+
+    const open = await issues(["kind:engagement", `client:${slug}`]);
+    if (open.length) {
+      out.innerHTML = `<div class="note warn">${esc(name)} is already on a playbook,
+        engagement #${open[0].number}. A client runs one playbook at a time.</div>`;
+      return;
+    }
+
+    say("Opening the engagement");
+    const engState = {
+      client: slug, client_name: name, playbook, phase: entry.id,
+      attempt: 1, playbook_version: pbook.version,
+    };
+    const engagement = await createIssue({
+      title: PBE.engagementTitle(engState, S.pb),
+      body: PBE.renderEngagementBody(engState, S.pb),
+      assignees: [S.user.login],
+      labels: ["kind:engagement", `client:${slug}`, `playbook:${playbook}`, `phase:${entry.id}`],
+    });
+
+    say(`Calling ${PBE.label(entry)}`);
+    const taskState = {
+      client: slug, client_name: name, playbook: entry.playbook, phase: entry.id,
+      attempt: 1, engagement: engagement.number, due_at: PBE.dueDate(entry),
+      playbook_version: pbook.version,
+    };
+    const first = await createIssue({
+      title: PBE.phaseTitle(entry, taskState),
+      body: PBE.renderPhaseBody(entry, taskState, S.pb),
+      assignees: [S.user.login],
+      labels: PBE.phaseLabels(taskState),
+    });
+
+    comment(
+      engagement.number,
+      `Engagement opened by @${S.user.login} on **${pbook.title}** (v${pbook.version}).\n\n` +
+        `First cue: #${first.number} — **${PBE.label(entry)}**`
+    ).catch(() => {});
+    addSubIssue(engagement.number, first.id).catch(() => {});
+
+    flash(`${name} is on ${pbook.title}`);
+    location.hash = `#/cue/${first.number}`;
+  } catch (e) {
+    out.innerHTML = `<div class="note bad">${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* -------------------------------------------------------------- the open page */
+
+async function openPage(number) {
+  view().className = "stage";
+  view().innerHTML = `<div class="page-head"><div class="standby"><span class="dot"></span>Finding the page</div></div>`;
+
+  const [iss, tasks] = await Promise.all([issue(number), issues(["kind:phase"])]);
   const s = stateOf(iss);
-  const ph = S.pb.phases[s.phase];
+  const ph = (S.pb.phases || {})[s.phase];
+  renderRail(tasks, number);
 
   if (!ph) {
-    view().innerHTML = `<div class="banner err">This issue carries phase <code>${esc(
-      s.phase || "(none)"
-    )}</code>, which is not in the compiled playbook.</div>`;
+    view().innerHTML = `<div class="page-head"><a class="backlink" href="#/">${ICON.back} Running order</a>
+      <div class="note bad">This issue is at phase <b>${esc(s.phase || "(none)")}</b>,
+      which is not in the playbook. Nothing can be called from here.</div></div>`;
     return;
   }
 
   const closed = iss.state === "closed";
-  const bodyHtml = await renderMarkdown(stripState(iss.body)).catch(() => null);
-
+  const pbTitle = (S.pb.playbooks[ph.playbook] || {}).title || ph.playbook;
   const atLimit = ph.max_attempts && s.attempt >= ph.max_attempts;
+  const d = dueInfo(s.due_at);
+
+  const margin = [
+    `<span><b>${esc(ph.id)}</b></span>`,
+    `<span>${esc(ph.task_type)}</span>`,
+    `<span>${esc(ph.owner)}</span>`,
+    s.due_at ? `<span${d.late ? ' style="color:var(--late)"' : ""}>due ${esc(s.due_at)}${d.late ? ` · ${esc(d.word)}` : ""}</span>` : "",
+    ph.max_attempts ? `<span>attempt ${s.attempt} of ${ph.max_attempts}</span>` : "",
+  ].filter(Boolean).join("");
 
   view().innerHTML = `
-    <p class="meta"><a href="#/">← board</a></p>
-    <div class="card">
-      <h3>${esc(s.client_name)}</h3>
-      <div class="meta"><b>${esc(ph.label)}</b> · ${esc(ph.task_type)} · owner ${esc(ph.owner)}</div>
-      <div style="margin-top:8px">
-        ${duePill(s.due_at)}
-        <span class="pill mono">${esc(ph.id)}</span>
-        <span class="pill">${esc(S.pb.playbooks[ph.playbook]?.title || ph.playbook)}</span>
-        ${ph.max_attempts ? `<span class="pill ${atLimit ? "over" : ""}">attempt ${s.attempt} of ${ph.max_attempts}</span>` : ""}
-        <a class="pill" href="https://github.com/${S.repo}/issues/${iss.number}" target="_blank" rel="noopener">#${iss.number} on GitHub</a>
+    <div class="page-head">
+      <a class="backlink" href="#/">${ICON.back} Running order</a>
+      <h1 class="client-name">${esc(s.client_name)}</h1>
+      <div class="client-sub">${esc(PBE.label(ph))} · cue ${iss.number}</div>
+      <div class="flags">
+        <span class="flag ${tapeFor(ph.playbook)}">${esc(pbTitle)}</span>
+        ${d.late ? `<span class="stamp late">${esc(d.word)}</span>` : ""}
+        ${atLimit && ph.on_exhausted ? `<span class="stamp hold">last attempt</span>` : ""}
+        ${ph.stub ? `<span class="stamp hold">not built</span>` : ""}
+        ${closed ? `<span class="stamp done">called</span>` : ""}
       </div>
-      ${atLimit && ph.on_exhausted
-        ? `<div class="banner warn" style="margin-top:12px">Last attempt. Repeating this phase again routes to
-           <b>${esc(S.pb.phases[ph.on_exhausted]?.label || ph.on_exhausted)}</b> instead of looping.</div>`
-        : ""}
-      ${ph.stub
-        ? `<div class="banner warn" style="margin-top:12px">This phase is a declared stub — the playbook routes here,
-           but this branch was not compiled into the POC. Nothing follows it.</div>`
-        : ""}
-      ${bodyHtml ? `<div class="body-md">${bodyHtml}</div>` : ""}
+      <div class="trail" id="trail"></div>
     </div>
 
-    ${closed
-      ? `<div class="banner ok">Closed${s.outcomes.length ? ` — outcome <b>${esc(s.outcomes[0])}</b>` : ""}.
-          This task is done; its transition is recorded on the engagement.</div>`
-      : ph.terminal
-      ? `<div class="banner ok">Terminal state. The engagement is complete.</div>`
-      : `<div class="card">
-          <label for="note">What happened</label>
-          <textarea id="note" placeholder="Notes for this step — posted as a comment before the transition is recorded."></textarea>
+    <section class="script-page">
+      <div class="script-margin">${margin}</div>
+      <div class="script-body">${scriptHtml(ph)}</div>
+    </section>
 
-          <h2 style="margin-top:20px">Then pick the outcome</h2>
-          <p class="meta dim" style="margin-top:-4px">Each one is a declared route in the playbook. Picking it closes this task and opens the next.</p>
-          <div class="outcomes">
-            ${ph.outcomes
-              .map(
-                (o) => `<button class="outcome${o.self_loop ? " loop" : ""}" data-slug="${esc(o.slug)}">
-                  <span class="oid">${esc(o.id)}</span>
-                  <span class="omeans">${esc(o.means)}</span>
-                  <span class="onext">→ ${
-                    o.self_loop
-                      ? `repeat ${esc(ph.label)}${
-                          ph.max_attempts && s.attempt >= ph.max_attempts
-                            ? ` — limit reached, goes to ${esc(S.pb.phases[ph.on_exhausted]?.label || ph.on_exhausted)}`
-                            : ` (attempt ${s.attempt + 1}${ph.max_attempts ? ` of ${ph.max_attempts}` : ""})`
-                        }`
-                      : esc(o.next_label)
-                  }</span>
-                </button>`
-              )
-              .join("")}
-          </div>
-          <div id="pickmsg"></div>
-        </div>`}
-  `;
+    ${
+      closed
+        ? `<div class="note good">This cue was called${
+            s.outcomes.length ? ` — <b>${esc(s.outcomes[0])}</b>` : ""
+          }. Its transition is recorded on the engagement.</div>`
+        : ph.terminal
+        ? `<div class="note good">End of the book. ${
+            ph.stub ? "This branch was not compiled into the POC." : "The engagement is complete."
+          }</div>`
+        : `
+      <div class="margin-notes">
+        <label for="note">Notes in the margin</label>
+        <textarea id="note" placeholder="What happened on the call, in your words."></textarea>
+      </div>
 
-  view().querySelectorAll("button.outcome").forEach((btn) => {
-    btn.onclick = () => pick(iss, s, ph, btn.dataset.slug);
+      <section class="calls">
+        <div class="calls-head">
+          <h2>Call the cue</h2>
+          <span class="hint">what each one causes</span>
+        </div>
+        ${ph.outcomes.map((o, i) => callRow(o, i, ph, s)).join("")}
+      </section>
+      <div id="pickmsg"></div>`
+    }
+
+    <div style="margin-top:26px">
+      <a class="btn quiet" href="https://github.com/${S.repo}/issues/${iss.number}" target="_blank" rel="noopener">
+        Open #${iss.number} on GitHub
+      </a>
+    </div>`;
+
+  view().querySelectorAll("[data-slug]").forEach((btn) => {
+    btn.onclick = () => pick(iss, s, ph, btn.dataset.slug, btn);
   });
+  loadTrail(s, ph);
 }
 
-async function pick(iss, s, ph, slug) {
+/* The plan, as the script. The sheet writes a goal line first, so lift it. */
+function scriptHtml(ph) {
+  const text = (ph.plan_text || "").trim();
+  if (!text) return `<span class="pencil">No plan text for this phase yet.</span>`;
+  return esc(text).replace(/^(Goal:.*)$/m, '<span class="goal">$1</span>');
+}
+
+function callRow(o, i, ph, s) {
+  const target = S.pb.phases[o.next];
+  const atLimit = ph.max_attempts && s.attempt >= ph.max_attempts;
+  let cls = "", icon = ICON.next, then;
+
+  if (o.self_loop && atLimit && ph.on_exhausted) {
+    cls = "exhausts"; icon = ICON.next;
+    const ex = S.pb.phases[ph.on_exhausted];
+    then = `attempts run out — goes to ${PBE.label(ex || { title: ph.on_exhausted, number: "" })}`;
+  } else if (o.self_loop) {
+    cls = "loop"; icon = ICON.loop;
+    then = `stays here — attempt ${s.attempt + 1}${ph.max_attempts ? ` of ${ph.max_attempts}` : ""}`;
+  } else if (target && target.terminal) {
+    cls = "ends"; icon = ICON.end;
+    then = `ends the engagement — ${PBE.label(target)}`;
+  } else {
+    then = `opens ${target ? PBE.label(target) : o.next}`;
+    if (target && target.playbook !== ph.playbook) {
+      then += ` — moves to ${(S.pb.playbooks[target.playbook] || {}).title || target.playbook}`;
+    }
+  }
+
+  return `<button class="call ${cls}" data-slug="${esc(o.slug)}">
+    <span class="n">${i + 1}</span>
+    <span>
+      <span class="name">${esc(o.id)}</span>
+      <span class="means">${esc(o.means)}</span>
+      <span class="then">${icon}${esc(then)}</span>
+    </span>
+  </button>`;
+}
+
+/* Where this client has already been. Loaded after paint: it is orientation,
+   never something the CSM should wait on. */
+async function loadTrail(s, ph) {
+  const host = $("#trail");
+  if (!host || !s.engagement) return;
+  try {
+    const subs = await api(`/repos/${S.repo}/issues/${s.engagement}/sub_issues`);
+    const seen = [];
+    for (const sub of subs || []) {
+      const st = stateOf(sub);
+      const p = (S.pb.phases || {})[st.phase];
+      if (!p) continue;
+      if (seen.length && seen[seen.length - 1].id === p.id) continue;
+      seen.push({ id: p.id, label: PBE.label(p), now: sub.state === "open" && st.phase === s.phase });
+    }
+    if (seen.length < 2) return;
+    host.innerHTML = seen
+      .map((x) => `<span class="t ${x.now ? "now" : ""}">${esc(x.label)}</span>`)
+      .join(`<span class="sep">${ICON.next}</span>`);
+  } catch {}
+}
+
+/* ------------------------------------------------------------------ calling */
+
+async function pick(iss, s, ph, slug, btn) {
   const note = $("#note")?.value.trim();
-  view().querySelectorAll("button.outcome").forEach((b) => (b.disabled = true));
   const msg = $("#pickmsg");
   const t0 = Date.now();
-  const say = (m) =>
-    (msg.innerHTML = `<p class="meta" style="margin-top:12px"><span class="spin"></span>${m}</p>`);
+  view().querySelectorAll(".call").forEach((b) => (b.disabled = true));
+  btn.classList.add("calling");
+  const say = (m) => (msg.innerHTML = `<div class="standby"><span class="dot"></span>${m}</div>`);
 
   try {
-    // Routing decided locally, from the same compiled graph the Python engine
-    // reads. An outcome that is not a declared edge throws here and nothing is
-    // written, which is the same reject-by-default rule the Action applies.
     const step = PBE.step(S.pb, ph.id, slug, s.attempt);
     const outcome = step.outcome;
     const nextPhase = S.pb.phases[step.nextPhase];
@@ -473,44 +603,25 @@ async function pick(iss, s, ph, slug) {
       attempt: s.attempt, version, exhausted: step.exhausted, pb: S.pb,
     });
 
-    /* Three waves, not eleven round trips.
-     *
-     * Measured against api.github.com: a read costs ~330ms and a write ~620ms,
-     * but FIVE reads issued together cost 318ms in total. Latency here is
-     * round trips, not work, so what matters is how many times we wait rather
-     * than how many calls we make. Doing these one after another took 7.2s.
-     *
-     * Only two orderings are real: the successor check must precede creating
-     * the successor, and the outcome label must land after the close, because
-     * the label is what wakes the backstop workflow and a closed task is how it
-     * knows not to transition again. Everything else goes in parallel. */
-
-    say(`Recording <b>${esc(outcome.id)}</b>…`);
+    say(`Calling <b>${esc(outcome.id)}</b>`);
 
     // WAVE 1: write the narrative, and look up what we need to decide.
     const [, engagement, already] = await Promise.all([
       (async () => {
-        // Chained, not parallel: the CSM's note must read above the machine's
-        // record, and two comments posted at once arrive in either order.
         if (note) await comment(iss.number, note);
         await comment(iss.number, record);
       })(),
-      // The whole object, not just the number: knowing its current labels lets
-      // the pointer move in ONE write instead of a remove followed by an add.
-      // This is a read, and reads cost nothing extra inside this wave.
       s.engagement
         ? issue(s.engagement).catch(() => null)
         : issues(["kind:engagement", `client:${s.client}`]).then((l) => l[0]),
       issues(["kind:phase", `client:${s.client}`, `phase:${nextPhase.id}`]).then((l) =>
-        // Exclude the task being closed. On a self-loop it IS the next phase,
-        // so without this the engine would think the successor already exists.
         l.filter((i) => i.number !== iss.number)
       ),
     ]);
 
-    say(`Opening <b>${esc(PBE.label(nextPhase))}</b>…`);
+    say(`Standby — ${esc(PBE.label(nextPhase))}`);
 
-    // WAVE 2: close the old task and open the new one. Independent of each other.
+    // WAVE 2: close the old cue and open the new one.
     const isNew = !already.length;
     const taskState = {
       client: s.client, client_name: s.client_name || s.client,
@@ -524,36 +635,23 @@ async function pick(iss, s, ph, slug) {
     const assignees = (iss.assignees || []).map((a) => a.login);
 
     const [, next] = await Promise.all([
-      // Close, THEN label. The label is what wakes the backstop workflow, and a
-      // closed task is how that workflow knows not to transition again. Both
-      // must be done before this function is allowed to stop caring, because
-      // they are what makes everything after this point recoverable.
       closeIssue(iss.number).then(() => addLabel(iss.number, `outcome:${slug}`)),
       isNew
         ? createIssue({
             title: PBE.phaseTitle(nextPhase, taskState),
             body: PBE.renderPhaseBody(nextPhase, taskState, S.pb),
             assignees: assignees.length ? assignees : [S.user.login],
-            // Labels inline: applying an unknown label creates it, verified.
             labels,
           })
         : Promise.resolve(already[0]),
     ]);
 
-    /* WAVE 3: bookkeeping, in the background.
-     *
-     * The CSM's task is done: the old one is closed and the new one is open, so
-     * the UI moves on now rather than holding them for another two writes. What
-     * is left updates the engagement, and if this tab dies before it lands the
-     * outcome label is already applied, so the backstop workflow fires and
-     * reconciles the pointer. Nothing here can be lost silently. */
+    // WAVE 3: bookkeeping, in the background. The outcome label is already on,
+    // so the backstop can finish or reconcile whatever this does not.
     const tail = [];
     if (isNew) {
       tail.push(
-        comment(
-          next.number,
-          `Created from #${iss.number} (\`${ph.id}\` → **${outcome.id}** → \`${nextPhase.id}\`).`
-        )
+        comment(next.number, `Called from #${iss.number} (\`${ph.id}\` → **${outcome.id}** → \`${nextPhase.id}\`).`)
       );
     }
     if (engagement) {
@@ -565,63 +663,105 @@ async function pick(iss, s, ph, slug) {
       if (crossing) keep.push(`playbook:${nextPhase.playbook}`);
       const ending = nextPhase.terminal && !nextPhase.stub;
       if (ending) keep.push(`state:${nextPhase.id.toLowerCase()}`);
-      tail.push(
-        setLabels(engagement.number, keep).then(() =>
-          ending ? closeIssue(engagement.number) : null
-        )
-      );
+      tail.push(setLabels(engagement.number, keep).then(() => (ending ? closeIssue(engagement.number) : null)));
       tail.push(
         comment(
           engagement.number,
-          `${record}\n\n- **Task closed:** #${iss.number}\n- **Task opened:** #${next.number}`
+          `${record}\n\n- **Cue called:** #${iss.number}\n- **Cue opened:** #${next.number}`
         )
       );
-      // Last and unawaited: the engagement timeline is the spine, the native
-      // hierarchy is a convenience, and losing it must never cost a transition.
       addSubIssue(engagement.number, next.id).catch(() => {});
     }
     Promise.all(tail).catch((e) => console.warn("engagement bookkeeping failed:", e.message));
 
-    console.log(`transition in ${((Date.now() - t0) / 1000).toFixed(2)}s`);
-    location.hash = `#/task/${next.number}`;
+    console.log(`called in ${((Date.now() - t0) / 1000).toFixed(2)}s`);
+    flash(
+      nextPhase.terminal && !nextPhase.stub
+        ? `${s.client_name}: ${PBE.label(nextPhase)}`
+        : `Next — ${PBE.label(nextPhase)}`
+    );
+    location.hash = `#/cue/${next.number}`;
   } catch (e) {
-    msg.innerHTML = `<div class="banner err" style="margin-top:12px">${esc(e.message)}
-      <br><br>If the task is already closed, the backstop workflow will finish the
-      transition within about a minute.</div>`;
-    view().querySelectorAll("button.outcome").forEach((b) => (b.disabled = false));
+    btn.classList.remove("calling");
+    msg.innerHTML = `<div class="note bad">${esc(e.message)}
+      <br><br>Nothing else was written. If this cue is already closed, the backstop
+      finishes the transition within about a minute.</div>`;
+    view().querySelectorAll(".call").forEach((b) => (b.disabled = false));
   }
 }
 
-/* ---------------------------------------------------------------- routing */
+/* ----------------------------------------------------------------- settings */
 
-async function route() {
-  const hash = location.hash || "#/";
+function settingsScreen() {
+  view().className = "stage solo";
+  const rail = document.getElementById("rail");
+  if (rail) rail.innerHTML = "";
+  view().innerHTML = `
+    <div class="masthead"><div><h1 class="sheet-title">Connection</h1>
+      <div class="who">where the book is kept</div></div></div>
+    <div class="panel">
+      <p class="lede">This page talks to GitHub from your browser with <b>your</b> token, so
+      every note and every called cue is attributed to you rather than to a shared bot.</p>
+      <label for="repo">Engine repository</label>
+      <input id="repo" type="text" placeholder="amitmai/causematch-cs-poc" value="${esc(S.repo)}" autocomplete="off">
+      <label for="token">Personal access token</label>
+      <input id="token" type="password" placeholder="github_pat_…" value="${esc(S.token)}" autocomplete="off">
+      <p class="lede" style="margin-top:10px">
+        Fine-grained, scoped to that repository only, with Issues read and write plus
+        Contents read. It is kept in this browser and sent only to api.github.com.
+      </p>
+      <button class="btn solid wide" id="save">Save and open the book</button>
+      <div id="msg"></div>
+    </div>`;
 
-  if (!S.repo || !S.token) return settingsScreen();
-
-  if (!S.user || !S.pb) {
-    view().innerHTML = `<p class="meta"><span class="spin"></span>Connecting…</p>`;
+  $("#save").onclick = async () => {
+    S.repo = $("#repo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "");
+    S.token = $("#token").value.trim();
+    localStorage.setItem("repo", S.repo);
+    localStorage.setItem("token", S.token);
+    $("#msg").innerHTML = `<div class="standby"><span class="dot"></span>Checking</div>`;
     try {
       S.user = await api("/user");
       await loadPlaybooks();
-      chrome();
+      flash(`Signed in as @${S.user.login}`);
+      location.hash = "#/";
     } catch (e) {
-      view().innerHTML = `<div class="banner err">${esc(e.message)}</div>
-        <p class="meta"><a href="#/settings">Check the connection settings</a></p>`;
+      $("#msg").innerHTML = `<div class="note bad">${esc(e.message)}${
+        e.status === 404
+          ? "<br><br>A 404 here almost always means the token cannot see the repository. Check it was scoped to this one, and that Contents is set to read."
+          : ""
+      }</div>`;
+    }
+  };
+}
+
+/* ------------------------------------------------------------------ routing */
+
+async function route() {
+  const hash = location.hash || "#/";
+  if (!S.repo || !S.token) return settingsScreen();
+
+  if (!S.user || !S.pb) {
+    view().innerHTML = `<div class="masthead"><div class="standby"><span class="dot"></span>Opening the book</div></div>`;
+    try {
+      S.user = await api("/user");
+      await loadPlaybooks();
+    } catch (e) {
+      view().innerHTML = `<div class="note bad">${esc(e.message)}</div>
+        <p style="margin-top:14px"><a class="btn quiet" href="#/settings">Check the connection</a></p>`;
       return;
     }
   }
 
   try {
     if (hash === "#/settings") return settingsScreen();
-    const task = /^#\/task\/(\d+)/.exec(hash);
-    if (task) return await taskScreen(Number(task[1]));
-    return await boardScreen();
+    const cue = /^#\/cue\/(\d+)/.exec(hash);
+    if (cue) return await openPage(Number(cue[1]));
+    return await runningOrder();
   } catch (e) {
-    view().innerHTML = `<div class="banner err">${esc(e.message)}</div>`;
+    view().innerHTML = `<div class="note bad">${esc(e.message)}</div>`;
   }
 }
 
-window.addEventListener("hashchange", route);
-chrome();
-route();
+window.addEventListener("hashchange", () => { route().then(wireGo); });
+route().then(wireGo);

@@ -1,140 +1,409 @@
+/* The promptbook.
+ *
+ * A stage manager calls a show from a ring-bound script with wide margins: cues
+ * numbered down the edge, the live line under a highlighter, called cues struck
+ * through. That is the same job as this tool, so the interface is that book.
+ *
+ * Light, not dark. A real promptbook is read in the wings under a hooded lamp,
+ * but this one is read in a corridor after a client call and at an office desk
+ * in daylight. The scene decides. */
+
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-400-latin.woff2") format("woff2");
+             font-weight: 400; font-display: swap; }
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-500-latin.woff2") format("woff2");
+             font-weight: 500; font-display: swap; }
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-600-latin.woff2") format("woff2");
+             font-weight: 600; font-display: swap; }
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-700-latin.woff2") format("woff2");
+             font-weight: 700; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-400-latin.woff2") format("woff2");
+             font-weight: 400; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-700-latin.woff2") format("woff2");
+             font-weight: 700; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-400-italic-latin.woff2") format("woff2");
+             font-weight: 400; font-style: italic; font-display: swap; }
+
 :root {
-  --bg: #f6f7f9;
-  --card: #ffffff;
-  --ink: #14161a;
-  --ink-2: #5b6270;
-  --ink-3: #8b93a1;
-  --line: #e3e6ea;
-  --accent: #1f6feb;
-  --accent-ink: #ffffff;
-  --warn: #9a6700;
-  --warn-bg: #fff8c5;
-  --danger: #cf222e;
-  --ok: #1a7f37;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(16, 22, 26, 0.06), 0 4px 12px rgba(16, 22, 26, 0.04);
+  --paper:      #F5F1E6;
+  --page:       #FCFAF4;
+  --ink:        #17161A;
+  --ink-2:      #3B3830;
+  --pencil:     #6E6A61;
+  --faint:      #97928A;
+  --rule:       #D8D1BE;
+  --rule-soft:  #E9E3D4;
+  --mark:       #FFE24A;
+  --mark-soft:  #FFF3B0;
+  --late:       #A82018;
+  --late-soft:  #F6E0DD;
+  --cleared:    #2E6A4E;
+  --tape-a:     #2E6C8E;
+  --tape-b:     #B5651C;
+  --tape-c:     #6B5B95;
+
+  --call:       "Archivo", system-ui, sans-serif;
+  --script:     "Courier Prime", "Courier New", Courier, monospace;
+
+  --gut: 20px;
+  --radius: 13px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --card: #161b22;
-    --ink: #e6edf3;
-    --ink-2: #9198a1;
-    --ink-3: #6e7681;
-    --line: #262c36;
-    --accent: #4493f8;
-    --warn: #d29922;
-    --warn-bg: #2b2003;
-    --danger: #f85149;
-    --ok: #3fb950;
-    --shadow: none;
-  }
-}
-
-* { box-sizing: border-box; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
 
 body {
-  margin: 0;
-  background: var(--bg);
+  background: var(--paper);
   color: var(--ink);
-  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  -webkit-text-size-adjust: 100%;
+  font-family: var(--call);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-.wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 64px; }
+#app { min-height: 100vh; }
 
-header.top {
-  position: sticky; top: 0; z-index: 10;
-  background: var(--card);
-  border-bottom: 1px solid var(--line);
-  padding: 10px 0;
-  margin-bottom: 20px;
-}
-header.top .wrap { display: flex; align-items: center; gap: 12px; padding-bottom: 0; }
-header.top h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
-header.top .spacer { flex: 1; }
-header.top a, header.top button.link {
-  color: var(--ink-2); text-decoration: none; font-size: 13px;
-  background: none; border: 0; cursor: pointer; padding: 4px; font-family: inherit;
-}
-header.top a:hover, header.top button.link:hover { color: var(--accent); }
+/* The bound edge: a real promptbook has one, and it is the only place a
+   vertical rule is honest. Hidden until the two-column desk layout exists. */
+.rail { display: none; }
 
-h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-3); margin: 28px 0 10px; font-weight: 600; }
-h3 { font-size: 17px; margin: 0 0 4px; letter-spacing: -0.01em; }
+.stage { padding: 0 var(--gut) 96px; max-width: 760px; margin: 0 auto; }
 
-.card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 16px;
-  margin-bottom: 12px;
-  box-shadow: var(--shadow);
+/* ---------------------------------------------------------------- typography */
+
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+
+.sheet-title {
+  font-size: clamp(26px, 7vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
 }
 
-a.card { display: block; color: inherit; text-decoration: none; }
-a.card:hover { border-color: var(--accent); }
-
-.meta { color: var(--ink-2); font-size: 13px; }
-.meta b { color: var(--ink); font-weight: 600; }
-.dim { color: var(--ink-3); }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-
-.pill {
-  display: inline-block; padding: 2px 8px; border-radius: 999px;
-  background: var(--bg); border: 1px solid var(--line);
-  font-size: 12px; color: var(--ink-2); margin-right: 6px;
+/* Group headers on a cue sheet are ruled, not floating. */
+.group {
+  display: flex; align-items: baseline; gap: 12px;
+  margin: 34px 0 2px; padding-bottom: 7px;
+  border-bottom: 1.5px solid var(--ink);
 }
-.pill.due { color: var(--warn); border-color: var(--warn); }
-.pill.over { color: var(--danger); border-color: var(--danger); }
-.pill.stub { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+.group h2 {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+}
+.group .count {
+  font-family: var(--script); font-size: 12px; color: var(--pencil);
+  margin-left: auto;
+}
+.group.is-late h2 { color: var(--late); }
+.group.is-late { border-bottom-color: var(--late); }
 
-label { display: block; font-size: 13px; color: var(--ink-2); margin: 12px 0 4px; font-weight: 500; }
+.pencil { color: var(--pencil); }
+.script { font-family: var(--script); }
 
-input, select, textarea {
-  width: 100%; padding: 10px 12px;
-  border: 1px solid var(--line); border-radius: 8px;
-  background: var(--bg); color: var(--ink);
+/* --------------------------------------------------------------- masthead */
+
+.masthead {
+  padding: 22px 0 4px;
+  display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap;
+}
+.masthead .who {
+  font-family: var(--script); font-size: 12.5px; color: var(--pencil);
+  margin-top: 5px;
+}
+.masthead .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* ------------------------------------------------------------------ cues */
+
+.cues { list-style: none; }
+
+.cue {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 0 14px;
+  align-items: start;
+  padding: 15px 10px 15px 0;
+  border: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  color: inherit; text-decoration: none;
+  position: relative;
+  background: none;
+  width: 100%;
+  text-align: left;
   font: inherit;
+  cursor: pointer;
 }
-textarea { min-height: 96px; resize: vertical; }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
-
-button {
-  font: inherit; font-weight: 550; cursor: pointer;
-  border-radius: 8px; border: 1px solid var(--line);
-  background: var(--card); color: var(--ink);
-  padding: 10px 14px;
+.cue::before {
+  /* The highlighter. It does not exist until the line is live. */
+  content: ""; position: absolute; inset: 4px -8px 4px -8px;
+  background: var(--mark-soft); border-radius: 3px;
+  opacity: 0; transform: scaleX(0.985);
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 0;
 }
-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-button:disabled { opacity: 0.5; cursor: default; }
-button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); width: 100%; padding: 12px; margin-top: 16px; }
-button.primary:hover:not(:disabled) { color: var(--accent-ink); filter: brightness(1.08); }
+.cue:hover::before, .cue:focus-visible::before { opacity: 1; transform: scaleX(1); }
+.cue:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 4px; }
+.cue > * { position: relative; z-index: 1; }
 
-/* Outcome pickers — the one control that matters, so it gets room to breathe
-   and a tap target that works on a phone. */
-.outcomes { display: grid; gap: 8px; margin-top: 4px; }
-button.outcome {
-  text-align: left; padding: 12px 14px; display: block; width: 100%;
+/* The cue number sits in a margin box, the way it is written on a cue sheet. */
+.cue .no {
+  font-family: var(--script); font-size: 12.5px; color: var(--pencil);
+  border: 1px solid var(--rule); border-radius: 3px;
+  padding: 3px 0; text-align: center; min-width: 40px;
+  background: var(--page);
 }
-button.outcome .oid { font-weight: 600; display: block; }
-button.outcome .omeans { color: var(--ink-2); font-size: 13px; font-weight: 400; display: block; margin-top: 2px; }
-button.outcome .onext { color: var(--ink-3); font-size: 12px; display: block; margin-top: 4px; }
-button.outcome.loop .onext { color: var(--warn); }
+.cue.is-late .no { border-color: var(--late); color: var(--late); }
 
-.banner { padding: 12px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 12px; border: 1px solid; }
-.banner.warn { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
-.banner.err { background: transparent; border-color: var(--danger); color: var(--danger); }
-.banner.ok { background: transparent; border-color: var(--ok); color: var(--ok); }
+.cue .client {
+  font-size: 17.5px; font-weight: 600; letter-spacing: -0.015em;
+  display: block; line-height: 1.25;
+}
+.cue .phase {
+  font-size: 13.5px; color: var(--pencil); margin-top: 3px; display: block;
+}
+.cue .when {
+  font-family: var(--script); font-size: 12px; color: var(--pencil);
+  white-space: nowrap; padding-top: 3px;
+}
+.cue.is-late .when { color: var(--late); font-weight: 700; }
 
-.body-md { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; font-size: 14px; overflow-x: auto; }
-.body-md h1, .body-md h2, .body-md h3 { font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--ink); margin: 16px 0 6px; }
-.body-md table { border-collapse: collapse; width: 100%; font-size: 13px; }
-.body-md th, .body-md td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; }
-.body-md code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
-.body-md blockquote { margin: 10px 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--ink-2); }
+/* Lateness is never colour alone: it is also a word and a rule weight. */
+.stamp {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  border: 1.5px solid currentColor; border-radius: 2px;
+  padding: 1px 5px; transform: rotate(-1.5deg);
+}
+.stamp.late { color: var(--late); }
+.stamp.hold { color: var(--tape-b); }
+.stamp.done { color: var(--cleared); }
 
-.spin { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: -2px; margin-right: 6px; }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* --------------------------------------------------------- the open page */
 
-.empty { color: var(--ink-3); font-size: 14px; padding: 20px 0; }
+.page-head { padding: 18px 0 0; }
+
+.backlink {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--pencil); text-decoration: none;
+  padding: 6px 0;
+}
+.backlink:hover { color: var(--ink); }
+
+.client-name {
+  font-size: clamp(29px, 8vw, 42px); font-weight: 700; letter-spacing: -0.035em;
+  line-height: 1.05; margin-top: 8px;
+}
+.client-sub {
+  font-family: var(--script); font-size: 13px; color: var(--pencil); margin-top: 9px;
+}
+
+/* Tape flags on the page edge: how a promptbook marks its acts. */
+.flags { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+.flag {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
+  padding: 3px 8px 4px; border-radius: 1px;
+  transform: rotate(-0.6deg);
+}
+.flag.a { background: #CBDDE8; color: #1A4157; }
+.flag.b { background: #F0DCC4; color: #6A3B0E; }
+.flag.c { background: #DCD6EC; color: #3B3163; }
+.flag.ghost { background: none; color: var(--pencil); border: 1px solid var(--rule); }
+
+/* The trail: where this client has already been. */
+.trail {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule-soft);
+  font-family: var(--script); font-size: 11.5px; color: var(--faint);
+}
+.trail .t { white-space: nowrap; }
+.trail .t.now { color: var(--ink); font-weight: 700; background: var(--mark); padding: 1px 5px; border-radius: 2px; }
+.trail .sep { opacity: .5; }
+
+/* The script itself. One elevation: a border, no shadow. */
+.script-page {
+  margin-top: 22px;
+  background: var(--page);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.script-margin {
+  display: flex; gap: 18px; flex-wrap: wrap;
+  padding: 13px 18px; border-bottom: 1px dashed var(--rule);
+  font-family: var(--script); font-size: 12px; color: var(--pencil);
+  background: linear-gradient(to bottom, rgba(0,0,0,.014), transparent);
+}
+.script-margin b { color: var(--ink-2); font-weight: 700; }
+.script-body {
+  padding: 20px 18px 24px;
+  font-family: var(--script);
+  font-size: 14.5px; line-height: 1.72;
+  white-space: pre-wrap;
+  max-width: 68ch;
+  color: var(--ink-2);
+}
+.script-body .goal { color: var(--ink); font-weight: 700; }
+
+/* ------------------------------------------------------------- cue options */
+
+.calls { margin-top: 30px; }
+.calls-head {
+  display: flex; align-items: baseline; gap: 12px;
+  border-bottom: 1.5px solid var(--ink); padding-bottom: 7px;
+}
+.calls-head h2 { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
+.calls-head .hint { margin-left: auto; font-size: 12px; color: var(--pencil); }
+
+.call {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 12px;
+  width: 100%; text-align: left; font: inherit; color: inherit;
+  background: none; border: 0; border-bottom: 1px solid var(--rule-soft);
+  padding: 15px 8px 15px 0; cursor: pointer; position: relative;
+}
+.call::before {
+  content: ""; position: absolute; inset: 3px -8px;
+  background: var(--mark-soft); border-radius: 3px; opacity: 0;
+  transition: opacity .16s ease; z-index: 0;
+}
+.call:hover::before, .call:focus-visible::before { opacity: 1; }
+.call:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 4px; }
+.call > * { position: relative; z-index: 1; }
+.call .n { font-family: var(--script); font-size: 12.5px; color: var(--pencil); padding-top: 2px; }
+.call .name { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; display: block; }
+.call .means { font-size: 13.5px; color: var(--pencil); margin-top: 3px; display: block; }
+.call .then {
+  display: inline-flex; align-items: flex-start; gap: 6px; margin-top: 7px;
+  font-family: var(--script); font-size: 12px; color: var(--ink-2);
+}
+.call .then svg { flex: none; margin-top: 3px; }
+.call.loop .then { color: var(--tape-b); }
+.call.ends .then { color: var(--cleared); }
+.call.exhausts .then { color: var(--late); }
+.call[disabled] { opacity: .45; cursor: default; }
+
+/* The called cue: struck through, the way it is done in the book. */
+.call.calling .name, .call.calling .means { opacity: .5; }
+.call.calling::after {
+  content: ""; position: absolute; left: 42px; right: 8px; top: 26px; height: 1.5px;
+  background: var(--ink); transform-origin: left; animation: strike .34s cubic-bezier(.2,.8,.25,1) forwards;
+  z-index: 2;
+}
+@keyframes strike { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ------------------------------------------------------------------ notes */
+
+.margin-notes { margin-top: 26px; }
+.margin-notes label {
+  display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--pencil); margin-bottom: 8px;
+}
+textarea, input[type="text"], input[type="password"], select {
+  width: 100%; font: inherit; color: var(--ink);
+  background: var(--page); border: 1px solid var(--rule); border-radius: 9px;
+  padding: 12px 13px;
+}
+textarea {
+  font-family: var(--script); font-size: 14px; line-height: 1.65;
+  min-height: 92px; resize: vertical;
+}
+textarea::placeholder, input::placeholder { color: var(--faint); }
+textarea:focus, input:focus, select:focus {
+  outline: 2px solid var(--ink); outline-offset: -1px; border-color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.btn {
+  font: inherit; font-weight: 600; font-size: 14px; text-decoration: none;
+  border: 1px solid var(--ink); background: var(--page); color: var(--ink);
+  border-radius: 999px; padding: 8px 15px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.btn:hover { background: var(--mark-soft); }
+.btn.solid { background: var(--ink); color: var(--paper); }
+.btn.solid:hover { background: #000; }
+.btn.quiet { border-color: var(--rule); color: var(--pencil); }
+.btn.quiet:hover { color: var(--ink); border-color: var(--ink); background: none; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.wide { width: 100%; justify-content: center; padding: 13px; font-size: 15px; }
+
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
+  border: 0; background: none; color: var(--pencil); padding: 7px 14px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* ------------------------------------------------------------------ notes/msg */
+
+.note {
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 14px 16px; font-size: 14.5px; color: var(--ink-2);
+  background: var(--page); margin-top: 18px;
+}
+.note.warn { border-color: var(--tape-b); background: #FDF3E7; }
+.note.bad { border-color: var(--late); background: var(--late-soft); }
+.note.good { border-color: var(--cleared); background: #E8F1EA; }
+.note b { color: var(--ink); }
+
+.empty {
+  margin-top: 40px; padding: 34px 22px; text-align: center;
+  border: 1px dashed var(--rule); border-radius: var(--radius);
+}
+.empty h2 { font-size: 19px; margin-bottom: 8px; }
+.empty p { color: var(--pencil); font-size: 14.5px; max-width: 40ch; margin: 0 auto; }
+
+.panel {
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  background: var(--page); padding: 18px; margin-top: 20px;
+}
+.panel h2 { font-size: 17px; margin-bottom: 4px; }
+.panel .lede { font-size: 14px; color: var(--pencil); margin-bottom: 6px; }
+.panel label {
+  display: block; font-size: 12px; font-weight: 700; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--pencil); margin: 16px 0 7px;
+}
+
+/* Working state: a promptbook says STANDBY before it says GO. */
+.standby {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--script); font-size: 13px; color: var(--pencil);
+  margin-top: 16px;
+}
+.standby .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--mark);
+  box-shadow: 0 0 0 0 rgba(255,226,74,.9); animation: pulse 1.5s ease-out infinite;
+}
+@keyframes pulse {
+  to { box-shadow: 0 0 0 9px rgba(255,226,74,0); }
+}
+
+.flash {
+  position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 14px);
+  background: var(--ink); color: var(--paper); border-radius: 999px;
+  padding: 10px 18px; font-size: 13.5px; font-weight: 500;
+  opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
+  z-index: 40; max-width: calc(100vw - 32px);
+}
+.flash.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* --------------------------------------------------------------- the desk */
+
+@media (min-width: 900px) {
+  #app {
+    display: grid; grid-template-columns: 340px minmax(0, 1fr);
+    align-items: start; min-height: 100vh;
+  }
+  /* The bound edge of the book, and the only vertical rule on the page. */
+  .rail {
+    display: block; position: sticky; top: 0; height: 100vh; overflow-y: auto;
+    border-right: 1px solid var(--rule); padding: 0 22px 40px;
+    background: linear-gradient(to right, transparent 96%, rgba(0,0,0,.02));
+  }
+  .rail .cue { grid-template-columns: 40px minmax(0, 1fr); padding-right: 0; }
+  .rail .cue .when { grid-column: 2; padding-top: 5px; }
+  .rail .cue .client { font-size: 15.5px; }
+  .rail .cue.current::before { opacity: 1; background: var(--mark); }
+  .stage { padding: 0 40px 96px; margin: 0; max-width: 720px; }
+  .stage.solo { margin: 0 auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
