@@ -38,6 +38,13 @@ const slugify = (name) =>
 async function api(path, opts = {}) {
   const res = await fetch(path.startsWith("http") ? path : API + path, {
     ...opts,
+    // GitHub answers authenticated reads with `cache-control: private, max-age=60`.
+    // Without no-store the browser serves its OWN cached copy for a full minute,
+    // so a polling loop watching for an issue to close keeps re-reading the same
+    // stale "open" for up to 60s after the engine already closed it. The engine
+    // takes ~20s; this made every transition feel like a minute and sometimes
+    // time out entirely, which read as the engine being stuck when it was done.
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${S.token}`,
       Accept: opts.accept || "application/vnd.github+json",
@@ -274,10 +281,12 @@ async function boardScreen() {
     try {
       await dispatch("start.yml", { client_name: name, playbook, assignee: S.user.login });
       const slug = slugify(name);
+      const tick = waiting($("#startmsg"), "Opening the engagement,", "start.yml");
+      tick(0);
       const found = await pollFor(
         () => issues(["kind:phase", `client:${slug}`]),
         (list) => list.length > 0,
-        30
+        { tries: 50, waitMs: 1200, onTick: tick }
       );
       if (found) {
         location.hash = `#/task/${found[0].number}`;
@@ -295,15 +304,33 @@ async function boardScreen() {
   };
 }
 
-async function pollFor(fetcher, done, tries = 20, waitMs = 2500) {
+/* Check first, then wait. The old order slept a full interval before looking,
+ * which added dead time to every single action for no reason. `onTick` reports
+ * elapsed seconds so a wait always visibly counts up rather than sitting on a
+ * spinner that could equally mean "working" or "dead". */
+async function pollFor(fetcher, done, { tries = 40, waitMs = 1200, onTick } = {}) {
+  const started = Date.now();
   for (let i = 0; i < tries; i++) {
-    await new Promise((r) => setTimeout(r, waitMs));
     try {
       const result = await fetcher();
       if (done(result)) return result;
-    } catch {}
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) throw e; // never spin on a bad token
+    }
+    if (onTick) onTick(Math.round((Date.now() - started) / 1000));
+    await new Promise((r) => setTimeout(r, waitMs));
   }
   return null;
+}
+
+const runsLink = (wf) => `https://github.com/${S.repo}/actions/workflows/${wf}`;
+
+function waiting(el, label, wf) {
+  const link = `<a href="${runsLink(wf)}" target="_blank" rel="noopener">watch the run</a>`;
+  return (secs) => {
+    el.innerHTML = `<p class="meta" style="margin-top:12px"><span class="spin"></span>${label}
+      <b>${secs}s</b> ${secs > 25 ? `&middot; taking longer than usual, ${link}` : ""}</p>`;
+  };
 }
 
 async function taskScreen(number) {
@@ -403,22 +430,36 @@ async function pick(iss, s, ph, slug) {
     // same thing.
     await addLabel(iss.number, `outcome:${slug}`);
 
-    msg.innerHTML = `<p class="meta" style="margin-top:12px"><span class="spin"></span>Label applied. Waiting for the engine to route it…</p>`;
+    // Say immediately where the playbook sends this, so the wait is informative
+    // rather than blank. This is a DISPLAY of the compiled playbook, not a
+    // decision: the engine still routes, and if it rejects the outcome the
+    // banner below replaces this with the real reason.
+    const dest = S.pb.phases[outcome.next];
+    const destLabel = outcome.self_loop
+      ? `another attempt at ${esc(ph.label)}`
+      : esc(dest ? dest.label : outcome.next);
+    const tick = waiting(msg, `Recorded <b>${esc(outcome.id)}</b>. Opening ${destLabel},`, "advance.yml");
+    tick(0);
 
-    const closed = await pollFor(() => issue(iss.number), (i) => i.state === "closed", 24, 2500);
+    const closed = await pollFor(() => issue(iss.number), (i) => i.state === "closed", {
+      tries: 50, waitMs: 1200, onTick: tick,
+    });
     if (!closed) {
-      msg.innerHTML = `<div class="banner warn" style="margin-top:12px">
-        The label is on, but the task has not closed yet.
-        <a href="https://github.com/${S.repo}/actions/workflows/advance.yml" target="_blank" rel="noopener">Check the run</a> —
-        if it was rejected, the reason is a comment on the issue.</div>`;
+      const why = await issue(iss.number).catch(() => null);
+      const rejected =
+        why && !(why.labels || []).some((l) => (l.name || l) === `outcome:${slug}`);
+      msg.innerHTML = `<div class="banner ${rejected ? "err" : "warn"}" style="margin-top:12px">
+        ${rejected
+          ? "The engine <b>rejected</b> this outcome and removed the label. The reason is a comment on the issue."
+          : "The label is on, but the task has not closed."}
+        <a href="${runsLink("advance.yml")}" target="_blank" rel="noopener">Check the run</a>.</div>`;
       return;
     }
 
     const next = await pollFor(
       () => issues(["kind:phase", `client:${s.client}`]),
       (list) => list.length > 0,
-      12,
-      2000
+      { tries: 25, waitMs: 1000, onTick: tick }
     );
     if (next && next.length) {
       location.hash = `#/task/${next[0].number}`;
