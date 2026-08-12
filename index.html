@@ -30,6 +30,13 @@
   DEMO: With no token the app runs on demo.js — five invented nonprofits — and
   says so in a banner on every screen.
 -->
+  <!-- The rail comes before the work in the DOM, which the two-column grid
+       needs, so at a desk a keyboard user tabbed through the brand, the nav,
+       the banner and every card in the queue — 19 stops — before reaching the
+       task they had just opened, on every task. This is the standard answer.
+       It moves focus rather than setting a hash: the router reads the hash,
+       and an href of "#view" would route to nowhere. -->
+  <button class="skip" id="skip">Skip to the work</button>
   <header class="topbar">
     <div class="in">
       <a class="brand" href="#/">

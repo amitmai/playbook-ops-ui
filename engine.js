@@ -70,11 +70,23 @@ const PBE = (() => {
     return { outcome, nextPhase: phase.id, nextAttempt, exhausted: false };
   }
 
+  /* Built from LOCAL date parts. toISOString() converts to UTC first, so for a
+     CSM east of Greenwich every task created between local midnight and the
+     offset — 00:00 to 03:00 in Israel — was stamped due a day EARLY, and read
+     as late a day before it was. The same mistake was found and fixed in the
+     sample data on 2026-08-12; this is the copy on the real write path, so it
+     was putting wrong dates into actual issues.
+     The Python engine in the engine repo does the same date arithmetic and has
+     not been checked. It runs on a UTC runner, so it does not have this bug —
+     but the two sides can now disagree by a day for a 00:00-03:00 local
+     creation, and only the backstop path uses the Python value. */
   const dueDate = (phase) => {
     if (phase.due_in_days === null || phase.due_in_days === undefined) return null;
     const d = new Date();
+    d.setHours(12, 0, 0, 0);
     d.setDate(d.getDate() + phase.due_in_days);
-    return d.toISOString().slice(0, 10);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   };
 
   /* Mirrors state.machine_block: same keys, same order, null values dropped. */

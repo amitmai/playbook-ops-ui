@@ -301,6 +301,19 @@ function renderBanner() {
   </div></div>`;
 }
 
+/* Which navigation is current. Every screen that awaits captures this on entry
+   and checks it again afterwards, because a screen that finishes late used to
+   paint itself over whatever the CSM had moved on to.
+   Two ways that bit, both only with a real repository, because every demo read
+   settles before a click can land. Opening Engagements and then Manager drew
+   the tree and then replaced it with the timeline, leaving the nav and the hash
+   saying Manager. Worse: on a slow queue, going to Connection to find out why
+   it was hanging — the obvious recovery — let the queue land a second later and
+   DESTROY THE TOKEN BEING TYPED. A late answer to a question nobody is asking
+   any more is not an update; it is an interruption. */
+let ROUTE_SEQ = 0;
+const stale = (seq) => seq !== ROUTE_SEQ;
+
 /* Settles the layout BEFORE anything renders into it.
    This used to run the other way round for the timeline and the tree: render
    first, then add the rail column if the module had put something in it. Both
@@ -322,12 +335,14 @@ function setLayout({ rail = true, wide = false } = {}) {
    330ms), and a card cannot name its engagement without them. */
 /* ONE of these three reads is the queue. The other two decorate it, and they
    must not be able to take it down.
-   Promise.all rejects the moment any member does, so before this the queue and
-   every task page went blank if the follow-up query failed — and that query
-   asks for `kind:todo`, a label no engine repository has yet. A rate limit, a
-   5xx or a transient blip on a supplementary read left a CSM with no work at
-   all and a "not here" page, which is the worst possible reading of "your
-   queue is empty". Degrade to no follow-ups, never to no queue. */
+   Promise.all rejects the moment any member does, so before this a failure on
+   either supplementary read left a CSM with no work at all and a "not here"
+   page — the worst possible reading of "your queue is empty".
+   The trigger is a rate limit, a 5xx or a network blip. NOT a missing label:
+   `labels=` is a filter and GitHub does not validate that the label exists, so
+   a repository that has never had `kind:todo` answers 200 with an empty array.
+   An earlier version of this comment claimed otherwise and was wrong.
+   Degrade to no follow-ups, never to no queue. */
 async function openWork() {
   const soft = (p, fallback, what) =>
     p.catch((e) => { console.warn(`${what} unavailable: ${e.message}`); return fallback; });
@@ -342,35 +357,38 @@ async function openWork() {
   return phaseTasks.concat(todos);
 }
 
+/* Whose work is being shown. Read in one place so the rail and the queue can
+   never disagree about it — they did: the queue honoured Mine and the rail,
+   which calls itself "The queue", quietly showed the whole team's. */
+const mineOnly = () => localStorage.getItem("mine") !== "0";
+const mine = (rows) =>
+  mineOnly() ? rows.filter(({ t }) => (t.assignees || []).some((a) => a.login === S.user.login)) : rows;
+
 function renderRail(work, currentNumber) {
   const rail = railEl();
   if (!rail) return;
-  const rows = work
-    .map((t) => ({ t, s: stateOf(t) }))
-    .sort(byUrgency)
-    .map(({ t, s }) => taskCard(t, s, { current: t.number === currentNumber }))
-    .join("");
+  const rows = mine(work.map((t) => ({ t, s: stateOf(t) }))).sort(byUrgency);
   rail.innerHTML = `
     <div class="masthead"><div>
       <a href="#/" class="sheet-title" style="text-decoration:none;color:inherit;font-size:20px">The queue</a>
-      <div class="who">${work.length} open</div>
+      <div class="who">${rows.length} open${mineOnly() ? " on you" : " across the team"}</div>
     </div></div>
-    <div class="tasks">${rows}</div>`;
+    <div class="tasks">${rows
+      .map(({ t, s }) => taskCard(t, s, { current: t.number === currentNumber }))
+      .join("")}</div>`;
   wireGo();
 }
 
 async function queueScreen() {
+  const seq = ROUTE_SEQ;
   setLayout({ rail: false });
   view().innerHTML = `<div class="masthead"><div><h1 class="sheet-title">The queue</h1>
     <div class="who">reading the book…</div></div></div>`;
 
   const work = await openWork();
+  if (stale(seq)) return;
 
-  const mineOnly = localStorage.getItem("mine") !== "0";
-  const rows = work
-    .map((t) => ({ t, s: stateOf(t) }))
-    .filter(({ t }) => !mineOnly || (t.assignees || []).some((a) => a.login === S.user.login))
-    .sort(byUrgency);
+  const rows = mine(work.map((t) => ({ t, s: stateOf(t) }))).sort(byUrgency);
 
   const buckets = {};
   for (const r of rows) (buckets[dueInfo(r.s.due_at).key] ||= []).push(r);
@@ -392,14 +410,16 @@ async function queueScreen() {
     <div class="masthead">
       <div>
         <h1 class="sheet-title">The queue</h1>
-        <div class="who">${esc(dateLine)} · ${rows.length} task${rows.length === 1 ? "" : "s"}${
-          mineOnly ? " on you" : " across the team"
-        }</div>
+        <!-- A live region, because pressing Mine or All rewrites the screen and
+             the only thing that reports the RESULT of the press is this line. -->
+        <div class="who" role="status" aria-live="polite">${esc(dateLine)} · ${rows.length} task${
+          rows.length === 1 ? "" : "s"
+        }${mineOnly() ? " on you" : " across the team"}</div>
       </div>
       <div class="acts">
         <div class="seg" role="group" aria-label="Whose tasks">
-          <button data-mine="1" aria-pressed="${mineOnly}">Mine</button>
-          <button data-mine="0" aria-pressed="${!mineOnly}">All</button>
+          <button data-mine="1" aria-pressed="${mineOnly()}">Mine</button>
+          <button data-mine="0" aria-pressed="${!mineOnly()}">All</button>
         </div>
         ${S.demo ? "" : `<button class="btn quiet" id="newclient">${ICON.plus} Client</button>`}
       </div>
@@ -410,14 +430,26 @@ async function queueScreen() {
         ? sheet
         : `<div class="empty"><h2>Nothing is owed</h2>
              <p>${
-               mineOnly && work.length
+               mineOnly() && work.length
                  ? "There are open tasks, but none are on you. Switch to All to see the team's book."
                  : "No client is on a playbook yet. Put one on and the first task appears here."
              }</p></div>`
     }`;
 
   view().querySelectorAll("[data-mine]").forEach((b) => {
-    b.onclick = () => { localStorage.setItem("mine", b.dataset.mine); queueScreen().then(wireGo); };
+    b.onclick = () => {
+      localStorage.setItem("mine", b.dataset.mine);
+      const which = b.dataset.mine;
+      /* Re-rendering the screen destroys the button that was just pressed, and
+         with it the focus. A keyboard user was returned to the top of the
+         document and had to tab past the brand, the nav and the banner to get
+         back to the toggle they were operating. Put focus on its replacement. */
+      queueScreen().then(() => {
+        wireGo();
+        const again = view().querySelector(`[data-mine="${which}"]`);
+        if (again) again.focus();
+      });
+    };
   });
   const nc = $("#newclient");
   if (nc) nc.onclick = () => startPanel();
@@ -534,10 +566,12 @@ async function startClient() {
 /* -------------------------------------------------------------- the open task */
 
 async function taskScreen(number) {
+  const seq = ROUTE_SEQ;
   setLayout({ rail: true });
   view().innerHTML = `<div class="page-head"><div class="standby"><span class="dot"></span>Finding the task</div></div>`;
 
   const [iss, work] = await Promise.all([issue(number), openWork()]);
+  if (stale(seq)) return;
   const s = stateOf(iss);
   renderRail(work, number);
 
@@ -619,7 +653,7 @@ async function taskScreen(number) {
       S.demo
         ? ""
         : `<div style="margin-top:26px">
-             <a class="btn quiet" href="https://github.com/${S.repo}/issues/${iss.number}" target="_blank" rel="noopener">
+             <a class="btn quiet" href="https://github.com/${esc(S.repo)}/issues/${iss.number}" target="_blank" rel="noopener">
                Open #${iss.number} on GitHub</a>
            </div>`
     }`;
@@ -772,8 +806,20 @@ async function loadTrail(s, ph) {
         const st = stateOf(sub);
         const p = (S.pb.phases || {})[st.phase];
         if (!p) continue;
-        if (seen.length && seen[seen.length - 1].id === p.id) continue;
-        seen.push({ id: p.id, label: PBE.label(p), now: sub.state === "open" && st.phase === s.phase });
+        const isNow = sub.state === "open" && st.phase === s.phase;
+        /* A repeated phase is several sub-issues in a row on the same id, and
+           the trail shows it once. It used to keep the FIRST of the run and
+           drop the rest — but the first is closed attempt 1 and the OPEN one is
+           last, so "you are here" was computed from the wrong attempt and the
+           gold mark never appeared. Repeats are a core product concept, so this
+           was wrong on the contract chase and the planning meeting, which are
+           the two phases most likely to repeat. Fold the run: if any attempt in
+           it is the live one, the run is the live one. */
+        if (seen.length && seen[seen.length - 1].id === p.id) {
+          if (isNow) seen[seen.length - 1].now = true;
+          continue;
+        }
+        seen.push({ id: p.id, label: PBE.label(p), now: isNow });
       }
     }
     if (seen.length < 2) return;
@@ -901,10 +947,12 @@ async function pick(iss, s, ph, slug, btn) {
 /* --------------------------------------------------------------- engagements */
 
 async function engagementsScreen(selected) {
+  const seq = ROUTE_SEQ;
   setLayout({ rail: true, wide: true });
   view().innerHTML = `<div style="padding:26px 20px"><div class="standby"><span class="dot"></span>Reading the engagements</div></div>`;
 
   const engagements = await issues(["kind:engagement"], "all");
+  if (stale(seq)) return;
   const list = engagements.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
   /* Opening one for you is right at a desk, where the list stays beside it and
@@ -1027,6 +1075,7 @@ function settingsScreen() {
 /* ------------------------------------------------------------------ routing */
 
 async function route() {
+  const seq = ++ROUTE_SEQ;
   const hash = location.hash || "#/";
   const section = hash.startsWith("#/engagements") ? "#/engagements"
     : hash.startsWith("#/manager") ? "#/manager"
@@ -1043,10 +1092,12 @@ async function route() {
       S.user = await whoami();
       await loadPlaybooks();
     } catch (e) {
+      if (stale(seq)) return;
       view().innerHTML = `<div class="note bad">${esc(e.message)}</div>
         <p style="margin-top:14px"><a class="btn quiet" href="#/settings">Check the connection</a></p>`;
       return;
     }
+    if (stale(seq)) return;
   }
 
   try {
@@ -1062,6 +1113,7 @@ async function route() {
        out — a link to a task that has since been deleted, or a number typed by
        hand, left you on a page with nothing on it. Say what was asked for, say
        the likeliest reason, and always leave the door open. */
+    if (stale(seq)) return;
     setLayout({ rail: false });
     const missing = e.status === 404 || /^No demo issue/.test(e.message);
     view().innerHTML = `
@@ -1083,6 +1135,15 @@ async function route() {
       </p>`;
   }
 }
+
+/* The skip link moves focus into the work without touching the hash. tabindex
+   -1 makes #view focusable without adding it to the tab order. */
+document.getElementById("skip").onclick = () => {
+  const v = view();
+  v.setAttribute("tabindex", "-1");
+  v.focus();
+  v.scrollIntoView({ block: "start" });
+};
 
 window.addEventListener("hashchange", () => { route().then(wireGo); });
 route().then(wireGo);

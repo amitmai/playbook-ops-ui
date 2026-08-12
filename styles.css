@@ -25,6 +25,18 @@ body {
 .rail { display: none; }
 .stage { padding: 0 var(--gut) 110px; max-width: 780px; margin: 0 auto; }
 
+/* Off-screen until it is focused, then it is the first thing on the page.
+   Not display:none — that would take it out of the tab order, which is the
+   one thing it exists to be in. */
+.skip {
+  position: absolute; left: 8px; top: -60px; z-index: 80;
+  font: inherit; font-weight: 600; font-size: 14px;
+  background: var(--ink); color: var(--paper);
+  border: 0; border-radius: var(--radius-sm); padding: 11px 16px;
+  cursor: pointer; transition: top .12s ease;
+}
+.skip:focus { top: 8px; outline: 2px solid var(--gold); outline-offset: 2px; }
+
 /* --------------------------------------------------------------- the chrome */
 
 /* One bar across the top, and the stripe under it. The stripe is the tallit:

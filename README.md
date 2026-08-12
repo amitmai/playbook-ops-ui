@@ -56,6 +56,31 @@ without reimplementing any routing.
 
 That is what makes "many UIs on top" cheap.
 
+## Checking it, including the half you cannot reach
+
+The demo path is easy to exercise; the **live** path needs a token and so goes
+untested by default. It is the half where the writes are. Both are reachable
+from a headless Chrome over the DevTools Protocol, with no dependencies —
+Node ≥22 has `fetch` and `WebSocket` built in.
+
+To drive the live path without a token: `Page.addScriptToEvaluateOnNewDocument`
+a script that seeds `repo` and `token` into `localStorage` and replaces
+`window.fetch` for `api.github.com`, answering from `DEMO` so the fixtures
+cannot drift. Then record every non-GET the app attempts and assert on the
+order. That is how the `openWork()` fault-tolerance bug was found; reading the
+code did not surface it.
+
+Three traps, each of which cost a debugging cycle:
+
+- **`Page.navigate` to a URL differing only in its `#hash` does not reload.**
+  A sweep over `#/`, `#/task/231`, `#/manager` silently re-tests whichever
+  build loaded first. Put a changing query string *before* the hash.
+- **Disable the cache** (`Network.setCacheDisabled`) or the profile serves its
+  own copy of `app.js`.
+- **`const DEMO` is not `window.DEMO`.** A top-level `const` in a classic
+  script is a lexical global and never becomes a property of `window`. Same for
+  `S`, `PBE`, `ENGAGEMENTS` and `MANAGER`. Use the bare identifier.
+
 ## Files
 
 | File | Holds |

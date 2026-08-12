@@ -132,7 +132,11 @@ under `prefers-reduced-motion`.
 - One elevation, and it is a border plus `--lift`, a 1px hairline shadow. No
   stacked shadows.
 - No colour is declared outside `theme.css`. A hex literal in any other file is
-  a bug.
+  a bug, with **one** exception, written down here so it does not become a
+  precedent: the favicon in `index.html` is an inline SVG data URI, and a data
+  URI cannot read a CSS variable. Its four values are `--paper`, `--blue`,
+  `--blue-lit` and `--gold-lit`, and they have to be changed by hand if those
+  tokens change.
 - Card radius 14px; pills only for small controls.
 - Icons are drawn SVG at 1.6 stroke with square caps. No emoji, no glyphs
   standing in for icons, anywhere.
