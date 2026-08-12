@@ -113,6 +113,13 @@ as a mock on the screen itself.
 the work on the right. The queue never disappears while a task is open. The
 timeline and the tree take the full width instead.
 
+**"Nothing selected" means different things in the two scenes.** On the desk,
+Engagements opens the first one for you: the list stays beside it, so picking
+another is one click. On a phone the detail replaces the list, so the same
+helpfulness would drop the CSM inside one client's history having never been
+shown the others — there, it opens on the list. A screen that is genuinely two
+scenes has to answer an empty state twice.
+
 ## Motion
 
 Restrained. Hover and selection are a border and a wash changing. Waiting says
