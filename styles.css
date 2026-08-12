@@ -71,6 +71,16 @@ body {
 }
 .nav a:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
 
+/* On a phone the brand takes the first row and the four sections have the
+   second to themselves. At the desk sizing they needed 340px of a 390px row
+   and "Connect" fell to a third row, which cost a whole line of the queue
+   before it started. Tightened just enough to hold one row. */
+@media (max-width: 560px) {
+  .topbar .in { padding: 9px 14px 8px; gap: 8px; }
+  .nav { margin-left: 0; width: 100%; gap: 0; }
+  .nav a { padding: 6px 10px; font-size: 13px; }
+}
+
 /* Demo runs when there is no token. It says so on every screen, because a
    screenshot of invented clients that does not admit it is a liability. */
 .demo-banner {

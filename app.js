@@ -451,7 +451,7 @@ function startPanel() {
         <button class="btn solid" id="start">Open the first task</button>
         <button class="btn quiet" id="cancelstart">Cancel</button>
       </div>
-      <div id="startmsg"></div>
+      <div id="startmsg" role="status" aria-live="polite"></div>
     </div>`;
   $("#cname").focus();
   $("#cancelstart").onclick = () => { host.dataset.open = "0"; host.innerHTML = ""; };
@@ -599,7 +599,7 @@ async function taskScreen(number) {
       <div class="section-head"><h2>Outcome</h2>
         <span class="hint">what each one causes</span></div>
       ${ph.outcomes.map((o, i) => callRow(o, i, ph, s)).join("")}
-      <div id="pickmsg"></div>
+      <div id="pickmsg" role="status" aria-live="polite"></div>
 
       ${postponeBlock()}`
     }
@@ -662,7 +662,7 @@ function followUpPage(iss, s) {
         <span class="then">${ICON.end}closes this follow-up — the engagement is untouched</span>
       </span>
     </button>
-    <div id="pickmsg"></div>
+    <div id="pickmsg" role="status" aria-live="polite"></div>
     ${postponeBlock()}`;
   wirePostpone();
 }
@@ -695,7 +695,7 @@ function postponeBlock() {
       <button class="btn quiet" data-mock="Postponing by a day">${ICON.clock} Postpone by a day</button>
       <button class="btn quiet" data-mock="Postponing by three days">${ICON.clock} Postpone by three days</button>
     </div>
-    <div id="mockmsg"></div>
+    <div id="mockmsg" role="status" aria-live="polite"></div>
   </div>`;
 }
 
@@ -895,7 +895,15 @@ async function engagementsScreen(selected) {
 
   const engagements = await issues(["kind:engagement"], "all");
   const list = engagements.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-  const pick = selected || (list[0] && list[0].number) || null;
+
+  /* Opening one for you is right at a desk, where the list stays beside it and
+     picking another is one click. On a phone the detail REPLACES the list, so
+     the same helpfulness lands you inside one client's history having never
+     been shown the other four, with only a back link out. The two scenes are
+     first-class in this product, so the route answers "nothing selected"
+     differently in each. */
+  const desk = window.matchMedia("(min-width: 900px)").matches;
+  const pick = selected || (desk && list[0] ? list[0].number : null);
 
   ENGAGEMENTS.render(view(), railEl(), {
     engagements: list,
@@ -910,6 +918,15 @@ async function engagementsScreen(selected) {
     selected: pick,
     onSelect: (n) => { location.hash = `#/engagements/${n}`; },
   });
+
+  /* The phone's back link returns the pane to the list on its own, but it does
+     not own the URL, so the hash stayed on the engagement you had just left.
+     Reloading or sharing that address reopened the detail you had backed out
+     of. Putting the hash back in step re-renders through the same route, which
+     lands on the list because nothing is selected. */
+  const back = view().querySelector(".eng-back");
+  if (back) back.addEventListener("click", () => { location.hash = "#/engagements"; });
+
   wireGo();
 }
 
@@ -946,7 +963,7 @@ function settingsScreen() {
         Contents read. It is kept in this browser and sent only to api.github.com.
       </p>
       <button class="btn solid wide" id="save">Save and open the book</button>
-      <div id="msg"></div>
+      <div id="msg" role="status" aria-live="polite"></div>
     </div>
     ${
       S.demo
@@ -1030,8 +1047,29 @@ async function route() {
     if (task) return await taskScreen(Number(task[1]));
     return await queueScreen();
   } catch (e) {
+    /* A bad or stale address used to dead-end on a bare error line with no way
+       out — a link to a task that has since been deleted, or a number typed by
+       hand, left you on a page with nothing on it. Say what was asked for, say
+       the likeliest reason, and always leave the door open. */
     setLayout({ rail: false });
-    view().innerHTML = `<div class="note bad">${esc(e.message)}</div>`;
+    const missing = e.status === 404 || /^No demo issue/.test(e.message);
+    view().innerHTML = `
+      <div class="masthead"><div><h1 class="sheet-title">Not here</h1>
+        <div class="who">${esc(location.hash)}</div></div></div>
+      <div class="note ${missing ? "" : "bad"}">
+        ${missing
+          ? `Nothing at this address.${
+              S.demo
+                ? " The sample book holds five engagements and twelve tasks, and this is not one of them."
+                : " The issue may have been deleted, or your token may not be able to see it."
+            }`
+          : esc(e.message)}
+      </div>
+      <p style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+        <a class="btn solid" href="#/">${ICON.back} The queue</a>
+        <a class="btn quiet" href="#/engagements">Engagements</a>
+        ${S.demo ? "" : `<a class="btn quiet" href="#/settings">Check the connection</a>`}
+      </p>`;
   }
 }
 
