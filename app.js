@@ -320,11 +320,22 @@ function setLayout({ rail = true, wide = false } = {}) {
    created the task. The engagements come along in the same wave — reads are
    effectively free in parallel (measured: five together cost 318ms, one costs
    330ms), and a card cannot name its engagement without them. */
+/* ONE of these three reads is the queue. The other two decorate it, and they
+   must not be able to take it down.
+   Promise.all rejects the moment any member does, so before this the queue and
+   every task page went blank if the follow-up query failed — and that query
+   asks for `kind:todo`, a label no engine repository has yet. A rate limit, a
+   5xx or a transient blip on a supplementary read left a CSM with no work at
+   all and a "not here" page, which is the worst possible reading of "your
+   queue is empty". Degrade to no follow-ups, never to no queue. */
 async function openWork() {
+  const soft = (p, fallback, what) =>
+    p.catch((e) => { console.warn(`${what} unavailable: ${e.message}`); return fallback; });
+
   const [phaseTasks, todos, engs] = await Promise.all([
-    issues(["kind:phase"]),
-    issues(["kind:todo"]),
-    issues(["kind:engagement"], "all"),
+    issues(["kind:phase"]),                                              // the queue itself
+    soft(issues(["kind:todo"]), [], "ad-hoc follow-ups"),                 // decoration
+    soft(issues(["kind:engagement"], "all"), [], "engagement index"),     // decoration
   ]);
   ENG_INDEX = {};
   for (const e of engs) ENG_INDEX[e.number] = stateOf(e);
