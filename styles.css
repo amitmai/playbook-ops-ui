@@ -1,407 +1,477 @@
-/* The promptbook.
+/* The shared sheet: chrome, the queue, and the open task.
  *
- * A stage manager calls a show from a ring-bound script with wide margins: cues
- * numbered down the edge, the live line under a highlighter, called cues struck
- * through. That is the same job as this tool, so the interface is that book.
+ * Tokens and faces live in theme.css and are loaded before this. Nothing here
+ * declares a colour of its own — if a value is not a token, it is a bug.
  *
- * Light, not dark. A real promptbook is read in the wings under a hooded lamp,
- * but this one is read in a corridor after a client call and at an office desk
- * in daylight. The scene decides. */
-
-@font-face { font-family: "Archivo"; src: url("fonts/archivo-400-latin.woff2") format("woff2");
-             font-weight: 400; font-display: swap; }
-@font-face { font-family: "Archivo"; src: url("fonts/archivo-500-latin.woff2") format("woff2");
-             font-weight: 500; font-display: swap; }
-@font-face { font-family: "Archivo"; src: url("fonts/archivo-600-latin.woff2") format("woff2");
-             font-weight: 600; font-display: swap; }
-@font-face { font-family: "Archivo"; src: url("fonts/archivo-700-latin.woff2") format("woff2");
-             font-weight: 700; font-display: swap; }
-@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-400-latin.woff2") format("woff2");
-             font-weight: 400; font-display: swap; }
-@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-700-latin.woff2") format("woff2");
-             font-weight: 700; font-display: swap; }
-@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-400-italic-latin.woff2") format("woff2");
-             font-weight: 400; font-style: italic; font-display: swap; }
-
-:root {
-  --paper:      #F5F1E6;
-  --page:       #FCFAF4;
-  --ink:        #17161A;
-  --ink-2:      #3B3830;
-  --pencil:     #6E6A61;
-  --faint:      #97928A;
-  --rule:       #D8D1BE;
-  --rule-soft:  #E9E3D4;
-  --mark:       #FFE24A;
-  --mark-soft:  #FFF3B0;
-  --late:       #A82018;
-  --late-soft:  #F6E0DD;
-  --cleared:    #2E6A4E;
-  --tape-a:     #2E6C8E;
-  --tape-b:     #B5651C;
-  --tape-c:     #6B5B95;
-
-  --call:       "Archivo", system-ui, sans-serif;
-  --script:     "Courier Prime", "Courier New", Courier, monospace;
-
-  --gut: 20px;
-  --radius: 13px;
-}
+ * The world is a tallit: white cloth, techelet stripes, and gold used the way
+ * gold is used on an illuminated page — once, on the thing that matters.
+ * Per-surface sheets (engagements.css, manager.css) load after this one and
+ * namespace themselves with eng- and mg-.
+ */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
 
 body {
-  background: var(--paper);
+  background: var(--wash);
   color: var(--ink);
-  font-family: var(--call);
+  font-family: var(--ui);
   font-size: 16px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
 #app { min-height: 100vh; }
-
-/* The bound edge: a real promptbook has one, and it is the only place a
-   vertical rule is honest. Hidden until the two-column desk layout exists. */
 .rail { display: none; }
+.stage { padding: 0 var(--gut) 110px; max-width: 780px; margin: 0 auto; }
 
-.stage { padding: 0 var(--gut) 96px; max-width: 760px; margin: 0 auto; }
+/* --------------------------------------------------------------- the chrome */
+
+/* One bar across the top, and the stripe under it. The stripe is the tallit:
+   it is the only ornament in the build, it appears once, and it is what makes
+   the surface Jewish rather than a logo would. */
+.topbar {
+  position: sticky; top: 0; z-index: 30;
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule);
+}
+.topbar .in {
+  max-width: 1400px; margin: 0 auto;
+  padding: 11px var(--gut) 10px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.topbar .stripe {
+  height: 3px;
+  background:
+    repeating-linear-gradient(90deg,
+      var(--blue) 0 16px, transparent 16px 22px,
+      var(--blue-lit) 22px 30px, transparent 30px 46px);
+  opacity: .75;
+}
+
+.brand {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--voice); font-size: 17px; font-weight: 700;
+  color: var(--ink); text-decoration: none; letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.brand svg { flex: none; color: var(--blue); }
+
+.nav { display: flex; gap: 2px; margin-left: auto; flex-wrap: wrap; }
+.nav a {
+  font-size: 13.5px; font-weight: 600; letter-spacing: .005em;
+  color: var(--quill); text-decoration: none;
+  padding: 7px 13px; border-radius: 999px;
+  border: 1px solid transparent;
+}
+.nav a:hover { color: var(--ink); background: var(--blue-mist); }
+.nav a.on {
+  color: var(--blue-deep); background: var(--blue-wash);
+  border-color: var(--blue-lit);
+}
+.nav a:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+
+/* Demo runs when there is no token. It says so on every screen, because a
+   screenshot of invented clients that does not admit it is a liability. */
+.demo-banner {
+  background: var(--gold-mist);
+  border-bottom: 1px solid var(--gold-bright);
+  font-size: 13px; color: var(--ink-2);
+}
+.demo-banner .in {
+  max-width: 1400px; margin: 0 auto; padding: 8px var(--gut);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.demo-banner b { font-weight: 700; color: var(--ink); }
+.demo-banner a { color: var(--blue-deep); }
+.demo-banner .seal { flex: none; color: var(--gold); }
 
 /* ---------------------------------------------------------------- typography */
 
-h1, h2, h3 { font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.015em; line-height: 1.15; }
 
 .sheet-title {
-  font-size: clamp(26px, 7vw, 34px);
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-family: var(--voice);
+  font-size: clamp(27px, 7vw, 35px); font-weight: 700; letter-spacing: -0.02em;
 }
-
-/* Group headers on a cue sheet are ruled, not floating. */
-.group {
-  display: flex; align-items: baseline; gap: 12px;
-  margin: 34px 0 2px; padding-bottom: 7px;
-  border-bottom: 1.5px solid var(--ink);
-}
-.group h2 {
-  font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
-}
-.group .count {
-  font-family: var(--script); font-size: 12px; color: var(--pencil);
-  margin-left: auto;
-}
-.group.is-late h2 { color: var(--late); }
-.group.is-late { border-bottom-color: var(--late); }
-
-.pencil { color: var(--pencil); }
-.script { font-family: var(--script); }
-
-/* --------------------------------------------------------------- masthead */
 
 .masthead {
-  padding: 22px 0 4px;
+  padding: 26px 0 6px;
   display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap;
 }
 .masthead .who {
-  font-family: var(--script); font-size: 12.5px; color: var(--pencil);
-  margin-top: 5px;
+  font-family: var(--ledger); font-size: 12.5px; color: var(--quill); margin-top: 6px;
 }
 .masthead .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
-/* ------------------------------------------------------------------ cues */
+/* A section header is ruled with the tallit stripe rather than a plain line. */
+.group {
+  display: flex; align-items: baseline; gap: 12px;
+  margin: 30px 0 10px; padding-bottom: 8px;
+  border-bottom: 2px solid var(--blue);
+}
+.group h2 {
+  font-family: var(--ui);
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: var(--blue-deep);
+}
+.group .count { font-family: var(--ledger); font-size: 12px; color: var(--quill); margin-left: auto; }
+.group.is-late { border-bottom-color: var(--late); }
+.group.is-late h2 { color: var(--late); }
 
-.cues { list-style: none; }
+.quill { color: var(--quill); }
+.ledger { font-family: var(--ledger); }
 
-.cue {
+/* ------------------------------------------------------------------ the queue */
+
+/* The card leads with the TASK, not the client. That is a change from the first
+   build, made by Amit on 2026-08-12: a queue is answered task-first, and the
+   client is the answer to "for whom", which is the second question. */
+.tasks { display: flex; flex-direction: column; gap: 9px; }
+
+.task {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) auto;
-  gap: 0 14px;
-  align-items: start;
-  padding: 15px 10px 15px 0;
-  border: 0;
-  border-bottom: 1px solid var(--rule-soft);
-  color: inherit; text-decoration: none;
-  position: relative;
-  background: none;
-  width: 100%;
-  text-align: left;
-  font: inherit;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 14px;
+  width: 100%; text-align: left; font: inherit; color: inherit;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 15px 16px 15px 15px;
   cursor: pointer;
+  box-shadow: var(--lift);
+  position: relative;
 }
-.cue::before {
-  /* The highlighter. It does not exist until the line is live. */
-  content: ""; position: absolute; inset: 4px -8px 4px -8px;
-  background: var(--mark-soft); border-radius: 3px;
-  opacity: 0; transform: scaleX(0.985);
-  transition: opacity .18s ease, transform .18s ease;
-  z-index: 0;
-}
-.cue:hover::before, .cue:focus-visible::before { opacity: 1; transform: scaleX(1); }
-.cue:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 4px; }
-.cue > * { position: relative; z-index: 1; }
+.task:hover { border-color: var(--blue-lit); border-left-color: var(--blue); background: var(--blue-mist); }
+.task:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.task.is-late { border-left-color: var(--late); }
+.task.is-late:hover { border-left-color: var(--late); }
 
-/* The cue number sits in a margin box, the way it is written on a cue sheet. */
-.cue .no {
-  font-family: var(--script); font-size: 12.5px; color: var(--pencil);
-  border: 1px solid var(--rule); border-radius: 3px;
-  padding: 3px 0; text-align: center; min-width: 40px;
-  background: var(--page);
+/* The task name. The heaviest thing on the card, and set in the serif so the
+   queue reads as a list of things to do rather than a list of records. */
+.task .name {
+  grid-column: 1;
+  font-family: var(--voice); font-size: 19px; font-weight: 600;
+  line-height: 1.28; letter-spacing: -0.01em; color: var(--ink);
 }
-.cue.is-late .no { border-color: var(--late); color: var(--late); }
+/* Who it is for, and which engagement it belongs to. */
+.task .for {
+  grid-column: 1; display: flex; gap: 7px; align-items: baseline; flex-wrap: wrap;
+  font-size: 13.5px; color: var(--quill);
+}
+.task .for .client { font-weight: 600; color: var(--ink-2); }
+.task .for .sep { color: var(--faint); }
+.task .for .eng { font-family: var(--ledger); font-size: 12px; }
+.task .meta {
+  grid-column: 1; margin-top: 3px;
+  font-size: 12.5px; color: var(--faint);
+}
+.task .when {
+  grid-column: 2; grid-row: 1;
+  font-family: var(--ledger); font-size: 12px; color: var(--quill);
+  white-space: nowrap; text-align: right; padding-top: 4px;
+}
+.task.is-late .when { color: var(--late); font-weight: 700; }
 
-.cue .client {
-  font-size: 17.5px; font-weight: 600; letter-spacing: -0.015em;
-  display: block; line-height: 1.25;
+/* A woven band naming the playbook. Cloth, not a button. */
+.band {
+  display: inline-block;
+  font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  padding: 3px 8px 3px; border-radius: 3px;
+  background: var(--blue-wash); color: var(--blue-deep);
 }
-.cue .phase {
-  font-size: 13.5px; color: var(--pencil); margin-top: 3px; display: block;
-}
-.cue .when {
-  font-family: var(--script); font-size: 12px; color: var(--pencil);
-  white-space: nowrap; padding-top: 3px;
-}
-.cue.is-late .when { color: var(--late); font-weight: 700; }
+.band.cancel   { background: var(--late-wash);  color: var(--late); }
+.band.expansion{ background: var(--band-expand-wash); color: var(--band-expand); }
+.band.todo     { background: var(--gold-wash);  color: var(--gold); }
 
-/* Lateness is never colour alone: it is also a word and a rule weight. */
-.stamp {
-  display: inline-block; font-size: 10.5px; font-weight: 700;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  border: 1.5px solid currentColor; border-radius: 2px;
-  padding: 1px 5px; transform: rotate(-1.5deg);
-}
-.stamp.late { color: var(--late); }
-.stamp.hold { color: var(--tape-b); }
-.stamp.done { color: var(--cleared); }
+/* ------------------------------------------------------------- the open task */
 
-/* --------------------------------------------------------- the open page */
-
-.page-head { padding: 18px 0 0; }
+.page-head { padding: 22px 0 0; }
 
 .backlink {
   display: inline-flex; align-items: center; gap: 7px;
-  font-size: 13px; color: var(--pencil); text-decoration: none;
-  padding: 6px 0;
+  font-size: 13px; color: var(--quill); text-decoration: none; padding: 6px 0;
 }
-.backlink:hover { color: var(--ink); }
+.backlink:hover { color: var(--blue-deep); }
 
-.client-name {
-  font-size: clamp(29px, 8vw, 42px); font-weight: 700; letter-spacing: -0.035em;
-  line-height: 1.05; margin-top: 8px;
+.task-title {
+  font-family: var(--voice);
+  font-size: clamp(28px, 7.5vw, 40px); font-weight: 700;
+  letter-spacing: -0.025em; line-height: 1.12; margin-top: 10px;
 }
-.client-sub {
-  font-family: var(--script); font-size: 13px; color: var(--pencil); margin-top: 9px;
+.task-client {
+  margin-top: 10px; font-size: 15px; color: var(--ink-2);
 }
+.task-client b { font-weight: 600; }
+.task-client .eng { font-family: var(--ledger); font-size: 12.5px; color: var(--quill); }
 
-/* Tape flags on the page edge: how a promptbook marks its acts. */
-.flags { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
-.flag {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
-  padding: 3px 8px 4px; border-radius: 1px;
-  transform: rotate(-0.6deg);
+.flags { display: flex; gap: 7px; margin-top: 15px; flex-wrap: wrap; align-items: center; }
+
+.stamp {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  border: 1.5px solid currentColor; border-radius: 3px; padding: 2px 6px;
 }
-.flag.a { background: #CBDDE8; color: #1A4157; }
-.flag.b { background: #F0DCC4; color: #6A3B0E; }
-.flag.c { background: #DCD6EC; color: #3B3163; }
-.flag.ghost { background: none; color: var(--pencil); border: 1px solid var(--rule); }
+.stamp.late { color: var(--late); }
+.stamp.hold { color: var(--warn); }
+.stamp.done { color: var(--good); }
 
 /* The trail: where this client has already been. */
 .trail {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
   margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule-soft);
-  font-family: var(--script); font-size: 11.5px; color: var(--faint);
+  font-family: var(--ledger); font-size: 11.5px; color: var(--faint);
 }
 .trail .t { white-space: nowrap; }
-.trail .t.now { color: var(--ink); font-weight: 700; background: var(--mark); padding: 1px 5px; border-radius: 2px; }
+.trail .t.now {
+  color: var(--ink); font-weight: 700;
+  background: var(--gold-wash); border-bottom: 2px solid var(--gold);
+  padding: 1px 6px; border-radius: 3px;
+}
 .trail .sep { opacity: .5; }
 
-/* The script itself. One elevation: a border, no shadow. */
-.script-page {
-  margin-top: 22px;
-  background: var(--page);
+/* THE BRIEF — the one thing to do, then how the playbook says to do it.
+   Two registers of the same serif: the instruction is large and plain, the
+   advice is smaller and quieter. The gold rule between them is the only gold
+   on the screen. */
+.brief {
+  margin-top: 24px;
+  background: var(--paper);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   overflow: hidden;
+  box-shadow: var(--lift);
 }
-.script-margin {
-  display: flex; gap: 18px; flex-wrap: wrap;
-  padding: 13px 18px; border-bottom: 1px dashed var(--rule);
-  font-family: var(--script); font-size: 12px; color: var(--pencil);
-  background: linear-gradient(to bottom, rgba(0,0,0,.014), transparent);
+.brief .doing {
+  padding: 26px 26px 24px;
+  font-family: var(--voice);
+  font-size: clamp(20px, 4.6vw, 25px); font-weight: 500;
+  line-height: 1.42; letter-spacing: -0.012em; color: var(--ink);
 }
-.script-margin b { color: var(--ink-2); font-weight: 700; }
-.script-body {
-  padding: 20px 18px 24px;
-  font-family: var(--script);
-  font-size: 14.5px; line-height: 1.72;
-  white-space: pre-wrap;
-  max-width: 68ch;
-  color: var(--ink-2);
+.brief .seam {
+  height: 2px;
+  background: linear-gradient(90deg, var(--gold) 0, var(--gold-bright) 30%, var(--rule-soft) 78%, transparent);
 }
-.script-body .goal { color: var(--ink); font-weight: 700; }
+.brief .advice-head {
+  padding: 18px 26px 0;
+  font-family: var(--ui);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase;
+  color: var(--gold);
+}
+.brief .advice {
+  padding: 9px 26px 26px;
+  font-family: var(--voice);
+  font-size: 15.5px; line-height: 1.78; color: var(--ink-2);
+  white-space: pre-wrap; max-width: 64ch;
+}
+.brief .advice .goal { color: var(--ink); font-weight: 700; }
+.brief .advice.none { color: var(--faint); font-style: italic; white-space: normal; }
 
-/* ------------------------------------------------------------- cue options */
+/* The margin strip: phase, owner, type, due, attempt. A record, so it is set
+   in the ledger face. */
+.brief .strip {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  padding: 12px 26px; border-top: 1px solid var(--rule-soft);
+  background: var(--blue-mist);
+  font-family: var(--ledger); font-size: 11.5px; color: var(--quill);
+}
+.brief .strip b { color: var(--ink-2); font-weight: 700; }
+.brief .strip .late { color: var(--late); }
 
-.calls { margin-top: 30px; }
-.calls-head {
+/* ---------------------------------------------------------------- sections */
+
+.section-head {
   display: flex; align-items: baseline; gap: 12px;
-  border-bottom: 1.5px solid var(--ink); padding-bottom: 7px;
+  margin: 34px 0 12px; padding-bottom: 8px;
+  border-bottom: 2px solid var(--blue);
 }
-.calls-head h2 { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; }
-.calls-head .hint { margin-left: auto; font-size: 12px; color: var(--pencil); }
+.section-head h2 {
+  font-family: var(--ui);
+  font-size: 11.5px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase;
+  color: var(--blue-deep);
+}
+.section-head .hint { margin-left: auto; font-size: 12.5px; color: var(--quill); }
 
-.call {
-  display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 0 12px;
-  width: 100%; text-align: left; font: inherit; color: inherit;
-  background: none; border: 0; border-bottom: 1px solid var(--rule-soft);
-  padding: 15px 8px 15px 0; cursor: pointer; position: relative;
-}
-.call::before {
-  content: ""; position: absolute; inset: 3px -8px;
-  background: var(--mark-soft); border-radius: 3px; opacity: 0;
-  transition: opacity .16s ease; z-index: 0;
-}
-.call:hover::before, .call:focus-visible::before { opacity: 1; }
-.call:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 4px; }
-.call > * { position: relative; z-index: 1; }
-.call .n { font-family: var(--script); font-size: 12.5px; color: var(--pencil); padding-top: 2px; }
-.call .name { font-weight: 600; font-size: 16px; letter-spacing: -0.01em; display: block; }
-.call .means { font-size: 13.5px; color: var(--pencil); margin-top: 3px; display: block; }
-.call .then {
-  display: inline-flex; align-items: flex-start; gap: 6px; margin-top: 7px;
-  font-family: var(--script); font-size: 12px; color: var(--ink-2);
-}
-.call .then svg { flex: none; margin-top: 3px; }
-.call.loop .then { color: var(--tape-b); }
-.call.ends .then { color: var(--cleared); }
-.call.exhausts .then { color: var(--late); }
-.call[disabled] { opacity: .45; cursor: default; }
-
-/* The called cue: struck through, the way it is done in the book. */
-.call.calling .name, .call.calling .means { opacity: .5; }
-.call.calling::after {
-  content: ""; position: absolute; left: 42px; right: 8px; top: 26px; height: 1.5px;
-  background: var(--ink); transform-origin: left; animation: strike .34s cubic-bezier(.2,.8,.25,1) forwards;
-  z-index: 2;
-}
-@keyframes strike { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-
-/* ------------------------------------------------------------------ notes */
-
-.margin-notes { margin-top: 26px; }
-.margin-notes label {
-  display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
-  text-transform: uppercase; color: var(--pencil); margin-bottom: 8px;
-}
 textarea, input[type="text"], input[type="password"], select {
   width: 100%; font: inherit; color: var(--ink);
-  background: var(--page); border: 1px solid var(--rule); border-radius: 9px;
-  padding: 12px 13px;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  padding: 13px 14px;
 }
 textarea {
-  font-family: var(--script); font-size: 14px; line-height: 1.65;
-  min-height: 92px; resize: vertical;
+  font-family: var(--voice); font-size: 15.5px; line-height: 1.7;
+  min-height: 108px; resize: vertical;
 }
 textarea::placeholder, input::placeholder { color: var(--faint); }
 textarea:focus, input:focus, select:focus {
-  outline: 2px solid var(--ink); outline-offset: -1px; border-color: var(--ink);
+  outline: 2px solid var(--blue-deep); outline-offset: -1px; border-color: var(--blue);
 }
+
+/* --------------------------------------------------------------- outcomes */
+
+.call {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 0 13px;
+  width: 100%; text-align: left; font: inherit; color: inherit;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 15px 16px; cursor: pointer; margin-bottom: 8px;
+  position: relative; box-shadow: var(--lift);
+}
+.call:hover { border-color: var(--blue-lit); background: var(--blue-mist); }
+.call:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.call .n {
+  font-family: var(--ledger); font-size: 12px; color: var(--blue-deep);
+  background: var(--blue-wash); border-radius: 4px; text-align: center;
+  padding: 2px 0; height: 22px;
+}
+.call .name {
+  font-family: var(--voice); font-weight: 600; font-size: 17px;
+  letter-spacing: -0.01em; display: block; line-height: 1.3;
+}
+.call .means { font-size: 13.5px; color: var(--quill); margin-top: 4px; display: block; }
+.call .then {
+  display: inline-flex; align-items: flex-start; gap: 7px; margin-top: 9px;
+  font-family: var(--ledger); font-size: 11.5px; color: var(--blue-deep);
+}
+.call .then svg { flex: none; margin-top: 2px; }
+.call.loop .then  { color: var(--warn); }
+.call.ends .then  { color: var(--good); }
+.call.exhausts .then { color: var(--late); }
+.call.exhausts .n { background: var(--late-wash); color: var(--late); }
+.call[disabled] { opacity: .5; cursor: default; }
+.call.calling { border-color: var(--gold); background: var(--gold-mist); }
+
+/* ---------------------------------------------------------------- postpone */
+
+/* Postponing is not an outcome. It says nothing happened yet, so it lives
+   below the outcomes, quieter, and it never looks like a way to finish. */
+.postpone { margin-top: 22px; padding-top: 18px; border-top: 1px dashed var(--rule); }
+.postpone .lede {
+  font-size: 13px; color: var(--quill); margin-bottom: 11px;
+}
+.postpone .row { display: flex; gap: 9px; flex-wrap: wrap; }
+
+/* A control that is drawn but not built. It looks like what it will be, and
+   says what it is when you press it. */
+.mocknote {
+  margin-top: 14px;
+  display: flex; gap: 11px; align-items: flex-start;
+  border: 1px solid var(--gold-bright); background: var(--gold-mist);
+  border-radius: var(--radius); padding: 13px 15px;
+  font-size: 14px; color: var(--ink-2);
+}
+.mocknote svg { flex: none; color: var(--gold); margin-top: 2px; }
+.mocknote b { color: var(--ink); font-weight: 700; }
 
 /* ---------------------------------------------------------------- controls */
 
 .btn {
   font: inherit; font-weight: 600; font-size: 14px; text-decoration: none;
-  border: 1px solid var(--ink); background: var(--page); color: var(--ink);
-  border-radius: 999px; padding: 8px 15px; cursor: pointer;
+  border: 1px solid var(--blue); background: var(--paper); color: var(--blue-deep);
+  border-radius: 999px; padding: 9px 16px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 7px;
 }
-.btn:hover { background: var(--mark-soft); }
-.btn.solid { background: var(--ink); color: var(--paper); }
-.btn.solid:hover { background: #000; }
-.btn.quiet { border-color: var(--rule); color: var(--pencil); }
-.btn.quiet:hover { color: var(--ink); border-color: var(--ink); background: none; }
+.btn:hover { background: var(--blue-wash); }
+.btn:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+.btn.solid { background: var(--blue); color: var(--paper); border-color: var(--blue); }
+.btn.solid:hover { background: var(--blue-deep); }
+.btn.quiet { border-color: var(--rule); color: var(--quill); }
+.btn.quiet:hover { color: var(--ink); border-color: var(--blue-lit); background: var(--blue-mist); }
+.btn.gold { border-color: var(--gold-bright); color: var(--gold); }
+.btn.gold:hover { background: var(--gold-wash); }
 .btn:disabled { opacity: .5; cursor: default; }
-.btn.wide { width: 100%; justify-content: center; padding: 13px; font-size: 15px; }
+.btn.wide { width: 100%; justify-content: center; padding: 14px; font-size: 15px; }
 
-.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--paper); }
 .seg button {
-  font: inherit; font-size: 12.5px; font-weight: 600; letter-spacing: .02em;
-  border: 0; background: none; color: var(--pencil); padding: 7px 14px; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  border: 0; background: none; color: var(--quill); padding: 7px 15px; cursor: pointer;
 }
-.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.seg button[aria-pressed="true"] { background: var(--blue); color: var(--paper); }
+.seg button:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
 
-/* ------------------------------------------------------------------ notes/msg */
+/* ------------------------------------------------------------ notes, states */
 
 .note {
   border: 1px solid var(--rule); border-radius: var(--radius);
-  padding: 14px 16px; font-size: 14.5px; color: var(--ink-2);
-  background: var(--page); margin-top: 18px;
+  padding: 15px 17px; font-size: 14.5px; color: var(--ink-2);
+  background: var(--paper); margin-top: 18px;
 }
-.note.warn { border-color: var(--tape-b); background: #FDF3E7; }
-.note.bad { border-color: var(--late); background: var(--late-soft); }
-.note.good { border-color: var(--cleared); background: #E8F1EA; }
+.note.warn { border-color: var(--warn); background: var(--warn-wash); }
+.note.bad  { border-color: var(--late); background: var(--late-wash); }
+.note.good { border-color: var(--good); background: var(--good-wash); }
 .note b { color: var(--ink); }
 
 .empty {
-  margin-top: 40px; padding: 34px 22px; text-align: center;
-  border: 1px dashed var(--rule); border-radius: var(--radius);
+  margin-top: 34px; padding: 40px 24px; text-align: center;
+  border: 1px dashed var(--rule); border-radius: var(--radius); background: var(--paper);
 }
-.empty h2 { font-size: 19px; margin-bottom: 8px; }
-.empty p { color: var(--pencil); font-size: 14.5px; max-width: 40ch; margin: 0 auto; }
+.empty h2 { font-family: var(--voice); font-size: 21px; margin-bottom: 9px; }
+.empty p { color: var(--quill); font-size: 14.5px; max-width: 44ch; margin: 0 auto; }
 
 .panel {
   border: 1px solid var(--rule); border-radius: var(--radius);
-  background: var(--page); padding: 18px; margin-top: 20px;
+  background: var(--paper); padding: 20px; margin-top: 20px; box-shadow: var(--lift);
 }
-.panel h2 { font-size: 17px; margin-bottom: 4px; }
-.panel .lede { font-size: 14px; color: var(--pencil); margin-bottom: 6px; }
+.panel h2 { font-family: var(--voice); font-size: 19px; margin-bottom: 5px; }
+.panel .lede { font-size: 14px; color: var(--quill); margin-bottom: 6px; }
 .panel label {
-  display: block; font-size: 12px; font-weight: 700; letter-spacing: .13em;
-  text-transform: uppercase; color: var(--pencil); margin: 16px 0 7px;
+  display: block; font-size: 11px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--quill); margin: 17px 0 7px;
 }
 
-/* Working state: a promptbook says STANDBY before it says GO. */
+/* Waiting says what it is waiting for. A transition takes seconds, and silence
+   reads as breakage. */
 .standby {
-  display: inline-flex; align-items: center; gap: 9px;
-  font-family: var(--script); font-size: 13px; color: var(--pencil);
-  margin-top: 16px;
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--ledger); font-size: 13px; color: var(--quill); margin-top: 16px;
 }
 .standby .dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--mark);
-  box-shadow: 0 0 0 0 rgba(255,226,74,.9); animation: pulse 1.5s ease-out infinite;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+  box-shadow: 0 0 0 0 rgba(var(--gold-rgb), .8); animation: pulse 1.5s ease-out infinite;
 }
-@keyframes pulse {
-  to { box-shadow: 0 0 0 9px rgba(255,226,74,0); }
-}
+@keyframes pulse { to { box-shadow: 0 0 0 9px rgba(var(--gold-rgb), 0); } }
 
 .flash {
   position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 14px);
   background: var(--ink); color: var(--paper); border-radius: 999px;
-  padding: 10px 18px; font-size: 13.5px; font-weight: 500;
+  padding: 11px 19px; font-size: 13.5px; font-weight: 500;
   opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease;
-  z-index: 40; max-width: calc(100vw - 32px);
+  z-index: 60; max-width: calc(100vw - 32px);
 }
 .flash.on { opacity: 1; transform: translate(-50%, 0); }
 
-/* --------------------------------------------------------------- the desk */
+/* ----------------------------------------------------------------- the desk */
 
 @media (min-width: 900px) {
-  #app {
-    display: grid; grid-template-columns: 340px minmax(0, 1fr);
-    align-items: start; min-height: 100vh;
-  }
-  /* The bound edge of the book, and the only vertical rule on the page. */
+  #app { display: grid; grid-template-columns: 350px minmax(0, 1fr); align-items: start; }
+  /* min-height as well as max-height. Sticky sizes to its content, so a rail
+     holding five engagements stopped halfway down and left a grey step where
+     the page showed through. */
   .rail {
-    display: block; position: sticky; top: 0; height: 100vh; overflow-y: auto;
-    border-right: 1px solid var(--rule); padding: 0 22px 40px;
-    background: linear-gradient(to right, transparent 96%, rgba(0,0,0,.02));
+    display: block; position: sticky; top: 0;
+    min-height: 100vh; max-height: 100vh; overflow-y: auto;
+    border-right: 1px solid var(--rule); padding: 0 20px 40px;
+    background: var(--paper);
   }
-  .rail .cue { grid-template-columns: 40px minmax(0, 1fr); padding-right: 0; }
-  .rail .cue .when { grid-column: 2; padding-top: 5px; }
-  .rail .cue .client { font-size: 15.5px; }
-  .rail .cue.current::before { opacity: 1; background: var(--mark); }
-  .stage { padding: 0 40px 96px; margin: 0; max-width: 720px; }
+  .rail .masthead { padding: 20px 0 4px; }
+  .rail .tasks { gap: 6px; }
+  /* One column in the rail, and the due date goes LAST. Left in place it sat
+     between the task and the client, which read as a caption on the task. */
+  .rail .task { padding: 12px 13px; box-shadow: none; grid-template-columns: minmax(0, 1fr); }
+  .rail .task .name { font-size: 16px; grid-row: 1; }
+  .rail .task .for  { grid-row: 2; }
+  .rail .task .meta { grid-row: 3; }
+  .rail .task .when { grid-column: 1; grid-row: 4; text-align: left; padding-top: 5px; }
+  .rail .task.current { border-color: var(--gold); background: var(--gold-mist); border-left-color: var(--gold); }
+  .stage { padding: 0 40px 110px; margin: 0; max-width: 800px; }
   .stage.solo { margin: 0 auto; }
+  /* A screen that owns its own layout (the timeline, the tree) takes the width.
+     Not the bleed, though: at padding 0 the timeline's own heading ran into the
+     right edge of the window and its first column touched the rail's rule. A
+     full-bleed canvas — the tree — zeroes this again from its own sheet. */
+  .stage.wide { max-width: none; padding: 0 26px 110px 22px; }
+  #app.norail { display: block; }
+  #app.norail .rail { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

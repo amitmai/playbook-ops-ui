@@ -1,0 +1,697 @@
+/* engagements.css — the engagement timeline.
+ *
+ * Loads after theme.css and styles.css, and every class here is prefixed `eng-`
+ * so nothing in the shared sheet can reach it and it can reach nothing there.
+ * No colour is written as a literal: every value comes from a theme token, or
+ * is mixed from one, so the four surfaces cannot drift apart.
+ *
+ * THE ONE GOLD THING is the phase the client is in right now: the live bar, its
+ * fading open end, and the dashed rule standing at today. Nothing else on this
+ * screen is allowed gold, which is why the state chips are blue, green and red
+ * rather than the obvious gold for "live".
+ *
+ * `color-mix` is always preceded by a flat token fallback on the same property.
+ * A browser that does not understand the mix drops that declaration and keeps
+ * the one above it, so the screen degrades to plain washes rather than to
+ * nothing.
+ */
+
+/* ------------------------------------------------------------------ layout */
+
+/* The timeline takes every pixel the column gives it. Nothing in this file caps
+   the plot: the only `max-width` values here are on prose, where a measure of 46
+   to 58 characters is the whole point. These `width: 100%` declarations exist so
+   that a flex or grid parent cannot shrink-to-fit the chain and leave the plot
+   sitting at its own minimum with the rest of the row empty. */
+.eng-wrap { width: 100%; }
+.eng-listpane, .eng-detailpane { width: 100%; }
+.eng-tl { width: 100%; }
+
+/* On a phone the list and the engagement are the same column, and one pushes to
+   the other. On the desk the list is the rail and never leaves. */
+.eng-wrap.eng-is-list .eng-detailpane { display: none; }
+.eng-wrap.eng-is-detail .eng-listpane { display: none; }
+
+.eng-rail { padding-top: 4px; }
+
+/* ------------------------------------------------------------------- list */
+
+.eng-listhead { padding: 22px 0 10px; }
+.eng-listtitle {
+  font-family: var(--voice);
+  font-size: clamp(26px, 7vw, 33px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.eng-listsub {
+  font-family: var(--ledger);
+  font-size: 12.5px;
+  color: var(--quill);
+  margin-top: 6px;
+}
+
+.eng-rows { display: block; }
+
+.eng-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 0 13px;
+  align-items: start;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  border-left: 3px solid transparent;
+  padding: 14px 8px 14px 9px;
+  cursor: pointer;
+}
+.eng-row:hover { background: var(--blue-mist); }
+.eng-row:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
+.eng-row.eng-is-on { background: var(--blue-mist); border-left-color: var(--blue); }
+
+.eng-row-no {
+  font-family: var(--ledger);
+  font-size: 12px;
+  color: var(--quill);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper);
+  padding: 3px 0;
+  text-align: center;
+}
+.eng-row-client {
+  display: block;
+  font-family: var(--voice);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.eng-row-phase {
+  display: block;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--quill);
+  margin-top: 3px;
+}
+.eng-row-side { display: grid; justify-items: end; gap: 5px; }
+.eng-row-days {
+  font-family: var(--ledger);
+  font-size: 11.5px;
+  color: var(--quill);
+  white-space: nowrap;
+}
+
+/* State is a word first. The colour only repeats what the word already said. */
+.eng-chip {
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  padding: 1px 6px 2px;
+  white-space: nowrap;
+}
+.eng-chip--live { color: var(--blue); }
+.eng-chip--won { color: var(--good); }
+.eng-chip--churned { color: var(--late); }
+.eng-chip--closed { color: var(--quill); }
+
+/* ------------------------------------------------------------------- head */
+
+.eng-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-family: var(--ui);
+  font-size: 13px;
+  color: var(--quill);
+  background: none;
+  border: 0;
+  padding: 14px 0 4px;
+  cursor: pointer;
+}
+.eng-back:hover { color: var(--blue-deep); }
+.eng-back:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; border-radius: 3px; }
+
+.eng-head { padding: 6px 0 4px; }
+.eng-client {
+  font-family: var(--voice);
+  font-size: clamp(28px, 7.5vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+.eng-headline {
+  font-family: var(--voice);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 54ch;
+  margin-top: 10px;
+}
+.eng-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid var(--rule-soft);
+}
+.eng-fact { display: flex; align-items: baseline; gap: 7px; }
+.eng-fact-k {
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.eng-fact-v {
+  font-family: var(--ledger);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------- section head */
+
+.eng-tl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 30px 0 0;
+  padding-bottom: 7px;
+  border-bottom: 1.5px solid var(--ink);
+}
+.eng-h2 {
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.eng-tl-range {
+  margin-left: auto;
+  font-family: var(--ledger);
+  font-size: 12px;
+  color: var(--quill);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.eng-tl-range svg { color: var(--faint); }
+
+.eng-swipe {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--quill);
+  margin: 10px 0 2px;
+}
+
+/* ------------------------------------------------------------------- plot */
+
+.eng-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-top: 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--lift);
+  -webkit-overflow-scrolling: touch;
+}
+.eng-scroll:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+
+/* The axis is drawn inside the same scrolling box as the bars, and the box
+   never scrolls vertically. Scroll sideways on a phone and the dates stay in
+   view above the bar they label, which is the only way the labels mean
+   anything. */
+.eng-plot {
+  position: relative;
+  padding: 28px 16px 6px;
+}
+
+/* ------------------------------------------------------------------- axis */
+
+.eng-axis {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.eng-tick { position: absolute; top: 0; bottom: 0; width: 0; }
+.eng-tick-label {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  transform: translateX(-50%);
+  font-family: var(--ledger);
+  font-size: 11px;
+  color: var(--quill);
+  white-space: nowrap;
+}
+.eng-tick-rule {
+  position: absolute;
+  top: 24px;
+  bottom: 0;
+  left: 0;
+  border-left: 1px solid var(--rule-soft);
+}
+.eng-tick.eng-is-first .eng-tick-label { transform: none; }
+.eng-tick.eng-is-last .eng-tick-label { transform: translateX(-100%); }
+.eng-tick.eng-is-now .eng-tick-label { color: var(--gold); font-weight: 700; }
+
+/* Today. The live edge of the engagement, and part of the one gold thing. */
+.eng-nowline {
+  position: absolute;
+  right: 16px;
+  top: 24px;
+  bottom: 6px;
+  border-left: 2px dashed var(--gold);
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------- crossings */
+
+.eng-crossrow { position: relative; z-index: 2; }
+.eng-cross {
+  position: absolute;
+  top: calc(var(--lane) * 24px);
+  bottom: 0;
+  width: 0;
+}
+.eng-cross-flag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transform: translateX(-6px);
+  white-space: nowrap;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--blue-deep);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 2px 7px 3px;
+}
+.eng-cross-flag svg { color: var(--faint); flex: none; }
+.eng-cross.eng-is-endside .eng-cross-flag { transform: translateX(-100%) translateX(6px); }
+.eng-cross-stem {
+  position: absolute;
+  left: 0;
+  top: 20px;
+  bottom: -6px;
+  border-left: 1px solid var(--blue-deep);
+}
+
+/* ------------------------------------------------------------------- bars */
+
+.eng-barrow { position: relative; height: 46px; z-index: 1; }
+
+.eng-pb-renewal { --band: var(--band-renewal); }
+.eng-pb-cancel { --band: var(--band-cancel); }
+.eng-pb-expand { --band: var(--band-expand); }
+.eng-pb-nurture { --band: var(--band-nurture); }
+
+.eng-bar {
+  position: absolute;
+  top: 0;
+  height: 44px;
+  min-width: 7px;
+  overflow: hidden;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0 8px;
+  border-radius: 3px;
+  border: 1px solid var(--rule);
+  border-color: color-mix(in srgb, var(--band) 34%, var(--rule));
+  border-left: 4px solid var(--band);
+  background: var(--wash);
+  background: color-mix(in srgb, var(--band) 11%, var(--paper));
+}
+.eng-bar:hover { background: var(--wash-2); background: color-mix(in srgb, var(--band) 20%, var(--paper)); }
+.eng-bar:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 1px; z-index: 5; }
+.eng-bar.eng-is-open { border-color: var(--ink); border-left-color: var(--band); }
+
+.eng-bar-text { display: block; overflow: hidden; padding-top: 5px; }
+.eng-bar-name {
+  display: block;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.eng-bar-sub {
+  display: block;
+  font-family: var(--ledger);
+  font-size: 10.5px;
+  color: var(--quill);
+  white-space: nowrap;
+  margin-top: 2px;
+}
+/* Measured in engagements.js. A clipped half-word is worse than no word, and
+   the ledger below repeats every one of them in full. */
+.eng-bar--tight .eng-bar-sub { display: none; }
+.eng-bar--tight .eng-bar-text { padding-top: 13px; }
+.eng-bar--mute .eng-bar-text { display: none; }
+
+/* Attempts ran out: hatched, and it says so. Never the hatch alone. */
+.eng-bar--out {
+  background-image: repeating-linear-gradient(135deg, transparent 0 5px, var(--rule) 5px 7px);
+  background-image: repeating-linear-gradient(
+    135deg, transparent 0 5px, color-mix(in srgb, var(--band) 30%, transparent) 5px 7px);
+  border-style: dashed;
+  border-left-style: solid;
+}
+.eng-bar--out .eng-bar-sub { color: var(--late); }
+
+/* The live phase. Gold, and open at the right-hand end, because it has not
+   finished and a squared-off end would say that it had. */
+.eng-bar--now {
+  background: var(--gold-wash);
+  border-color: var(--gold);
+  border-left: 4px solid var(--band);
+  border-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-right: 30px;
+}
+.eng-bar--now:hover { background: var(--gold-mist); }
+.eng-bar--now::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: -1px;
+  bottom: -1px;
+  width: 40px;
+  background: linear-gradient(90deg, transparent, var(--paper));
+  pointer-events: none;
+}
+.eng-bar--now .eng-bar-sub { color: var(--gold); font-weight: 700; }
+
+/* ---------------------------------------------------------------- bubbles */
+
+.eng-bubrow { position: relative; z-index: 2; }
+
+.eng-bub {
+  position: absolute;
+  left: 0;
+  top: calc(var(--lane) * 30px);
+  transform: translateX(-50%);
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+}
+.eng-bub-stem {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 0;
+  height: calc(var(--lane) * 30px + 10px);
+  border-left: 1px dashed var(--rule);
+}
+.eng-bub-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1.5px solid currentColor;
+}
+.eng-bub:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; border-radius: 50%; }
+.eng-bub:hover .eng-bub-mark,
+.eng-bub.eng-is-open .eng-bub-mark { background: var(--blue-mist); }
+.eng-bub.eng-is-open .eng-bub-mark { border-width: 2.5px; }
+
+/* Seven kinds is more than colour can carry, so the drawn shape is the
+   identifier and the colour is a second, weaker echo of it. */
+.eng-bub--win, .eng-k-win { color: var(--good); }
+.eng-bub--risk, .eng-k-risk { color: var(--late); }
+.eng-bub--money, .eng-k-money { color: var(--warn); }
+.eng-bub--handoff, .eng-k-handoff { color: var(--blue); }
+.eng-bub--cross, .eng-k-cross { color: var(--blue-deep); }
+.eng-bub--silence, .eng-k-silence { color: var(--faint); }
+.eng-bub--note, .eng-k-note { color: var(--ink-2); }
+
+/* ----------------------------------------------------------------- record */
+
+.eng-reveal {
+  margin-top: 16px;
+  padding: 15px 17px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--wash);
+  min-height: 74px;
+}
+.eng-reveal-hint {
+  font-family: var(--ui);
+  font-size: 13px;
+  color: var(--quill);
+}
+.eng-reveal-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.eng-reveal-title {
+  font-family: var(--voice);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin-top: 6px;
+}
+.eng-reveal-when {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ledger);
+  font-size: 12px;
+  color: var(--quill);
+  margin-top: 5px;
+}
+.eng-reveal-when svg { color: var(--faint); }
+.eng-reveal-detail {
+  font-family: var(--voice);
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  margin-top: 9px;
+  max-width: 58ch;
+}
+
+/* ----------------------------------------------------------------- ledger */
+
+.eng-leds { display: block; }
+
+.eng-led {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  border-left: 4px solid var(--band);
+  padding: 11px 6px 11px 11px;
+}
+.eng-led:hover { background: var(--wash); }
+.eng-led:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: -2px; }
+.eng-led.eng-is-open { background: var(--blue-mist); }
+.eng-led-when {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ledger);
+  font-size: 11.5px;
+  color: var(--quill);
+}
+.eng-led-when svg { color: var(--faint); flex: none; }
+.eng-led-body { grid-column: 1; }
+.eng-led-name {
+  display: block;
+  font-family: var(--ui);
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.eng-led-meta {
+  display: block;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--quill);
+  margin-top: 2px;
+}
+.eng-led-side {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  justify-items: end;
+  align-content: center;
+  gap: 4px;
+}
+.eng-led-len {
+  font-family: var(--ledger);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.eng-led-state {
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--quill);
+  white-space: nowrap;
+}
+.eng-led--out .eng-led-state { color: var(--late); }
+.eng-led--now .eng-led-state { color: var(--gold); }
+
+/* ----------------------------------------------------------------- legend */
+
+.eng-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-soft);
+}
+.eng-legend-h {
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.eng-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--quill);
+}
+.eng-key-swatch {
+  width: 20px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid var(--rule);
+  border-color: color-mix(in srgb, var(--band, var(--rule)) 34%, var(--rule));
+  border-left: 4px solid var(--band, var(--rule));
+  background: var(--wash);
+  background: color-mix(in srgb, var(--band, var(--rule)) 11%, var(--paper));
+}
+.eng-key--out .eng-key-swatch {
+  --band: var(--ink-2);
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, var(--rule) 4px 6px);
+  border-style: dashed;
+  border-left-style: solid;
+}
+.eng-key--now .eng-key-swatch {
+  background: var(--gold-wash);
+  border-color: var(--gold);
+  border-left: 4px solid var(--quill);
+  border-right: 0;
+}
+
+/* ------------------------------------------------------------------ empty */
+
+.eng-empty {
+  margin-top: 26px;
+  padding: 30px 22px;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.eng-empty h2 {
+  font-family: var(--voice);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.eng-empty p {
+  font-family: var(--ui);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--quill);
+  max-width: 46ch;
+  margin: 0 auto;
+}
+.eng-empty-more { margin-top: 12px; }
+.eng-link { color: var(--blue); }
+.eng-link:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 2px; }
+
+/* ------------------------------------------------------------------- desk */
+
+@media (min-width: 900px) {
+  /* The list is the rail and stays there, so the column in the main view is
+     always the engagement. Same specificity as the phone rules above, and
+     later in the sheet, so it wins without !important. */
+  .eng-wrap.eng-is-list .eng-listpane,
+  .eng-wrap.eng-is-detail .eng-listpane { display: none; }
+  .eng-wrap.eng-is-list .eng-detailpane,
+  .eng-wrap.eng-is-detail .eng-detailpane { display: block; }
+
+  .eng-back { display: none; }
+  /* The swipe cue used to be hidden here, from when only the phone scrolled.
+     At 20px per day the desk scrolls too — #101 overruns its column by about
+     100px and #105 by well over a screen — and macOS overlay scrollbars do not
+     appear until you already scroll, so hiding the cue hid the fact that there
+     was more engagement to the right. */
+  .eng-row-client { font-size: 16px; }
+  .eng-listtitle { font-size: 21px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eng-wrap *, .eng-rail * { animation: none !important; transition: none !important; }
+  .eng-scroll { scroll-behavior: auto; }
+}

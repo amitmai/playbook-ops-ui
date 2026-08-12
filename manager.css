@@ -1,0 +1,582 @@
+/* manager.css — the manager's view only.
+ *
+ * Every class is prefixed mg- because this sheet loads alongside styles.css and
+ * the two must not be able to reach into each other.
+ *
+ * The world is theme.css: white ground, one techelet blue, gold used once. Gold
+ * appears on exactly one thing here — the selected node — so that seeing gold
+ * anywhere on this screen means "this is the record you are reading". Band
+ * colour is carried on a left bar and an edge, and the band is ALWAYS written
+ * out as a word next to it, because a manager reading this on a phone in
+ * daylight cannot be asked to tell amber from gold.
+ */
+
+/* The shared sheet centres .stage in a 720px column, which is right for a task
+   page and wrong for a canvas. Only this screen opts out. */
+#view:has(.mg-screen) {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.mg-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.mg-sr {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------- head */
+
+/* The head is deliberately short. Every pixel it takes comes off the canvas,
+   and the canvas is fitted, so it comes off the readable size of the names. */
+.mg-head { padding: 16px 22px 10px; }
+
+.mg-head-top {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.mg-title {
+  font-family: var(--voice);
+  font-size: clamp(25px, 6vw, 33px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.mg-sub {
+  font-family: var(--ui);
+  font-size: 12.5px;
+  color: var(--quill);
+}
+
+/* The banner is chrome, not a warning. It carries no icon and no red: it is a
+   fact about the screen, said once, and never scrolled away. */
+.mg-banner {
+  margin-top: 10px;
+  max-width: 78ch;
+  padding: 9px 12px;
+  background: var(--blue-mist);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--blue-deep);
+  border-radius: var(--radius-sm);
+  font-family: var(--voice);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.mg-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0 22px 10px;
+}
+
+.mg-grp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+}
+
+.mg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 13px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mg-btn:hover { background: var(--blue-wash); color: var(--blue-deep); }
+.mg-btn:active { background: var(--wash-2); }
+
+.mg-icon { width: 34px; padding: 6px; }
+.mg-i { display: block; }
+
+.mg-zoom {
+  min-width: 52px;
+  text-align: center;
+  font-family: var(--ledger);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------------- the canvas */
+
+.mg-vp {
+  position: relative;
+  flex: 1;
+  min-height: 240px;
+  overflow: hidden;
+  background: var(--wash);
+  border-top: 1px solid var(--rule);
+  cursor: grab;
+  /* Without this the browser claims the pinch and the drag for its own scroll
+     before a pointermove ever arrives, and the canvas cannot be moved on a
+     phone at all. */
+  touch-action: none;
+}
+
+.mg-vp.mg-drag { cursor: grabbing; }
+
+.mg-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.mg-canvas.mg-glide { transition: transform 280ms cubic-bezier(.2, .7, .2, 1); }
+
+.mg-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.mg-edge {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: square;
+  opacity: .5;
+}
+
+.mg-hint {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  padding: 5px 10px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--quill);
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------- a node */
+
+.mg-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px 10px;
+  text-align: left;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--mg-band, var(--rule));
+  border-radius: var(--radius-sm);
+  box-shadow: var(--lift);
+  cursor: pointer;
+  font-family: var(--ui);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms linear, border-color 120ms linear;
+}
+
+.mg-node:hover { background: var(--blue-mist); }
+
+.mg-node:focus-visible {
+  outline: 2px solid var(--blue-deep);
+  outline-offset: 2px;
+}
+
+/* The one gold thing on this screen. */
+.mg-node.mg-on {
+  background: var(--gold-mist);
+  border-color: var(--gold);
+  border-left-color: var(--gold);
+}
+
+.mg-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mg-name {
+  font-family: var(--voice);
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.mg-chev { flex: none; color: var(--quill); margin-top: -1px; }
+
+.mg-meta {
+  font-family: var(--ui);
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--quill);
+}
+
+.mg-num {
+  font-family: var(--ledger);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.mg-note {
+  margin-top: 2px;
+  font-family: var(--voice);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--quill);
+}
+
+/* What a closed node owes the reader: the size of what it is hiding. */
+.mg-shut {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 9px;
+  background: var(--blue-wash);
+  border-radius: 999px;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--blue-deep);
+}
+
+.mg-shut .mg-num { color: var(--blue-deep); }
+
+/* The department and its managers carry no band, so they carry no band colour
+   either. They are told apart by weight and ground instead. */
+.mg-root {
+  background: var(--blue-wash);
+  border-color: var(--blue-lit);
+  border-left-color: var(--blue-deep);
+}
+.mg-root .mg-name { font-size: 18px; font-weight: 700; }
+.mg-root:hover { background: var(--blue-wash); border-color: var(--blue); }
+
+.mg-manager { border-left-color: var(--quill); }
+.mg-manager .mg-name { font-size: 16.5px; font-weight: 700; }
+
+.mg-band .mg-name { font-weight: 700; }
+
+.mg-engagement { background: var(--paper); }
+
+/* ------------------------------------------------------------- the panel */
+
+.mg-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: var(--wash);
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.mg-scrim[hidden] { display: none; }
+
+/* On a desk the tree stays readable beside the panel, so the scrim only has to
+   catch a click. On a phone the sheet covers the screen and the scrim is the
+   thing that says the canvas is behind it. */
+@media (min-width: 900px) {
+  .mg-scrim { background: color-mix(in srgb, var(--ink) 9%, transparent); }
+}
+
+.mg-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(430px, 100%);
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 22px 40px;
+  background: var(--paper);
+  border-left: 1px solid var(--rule);
+  box-shadow: var(--lift-2);
+  transform: translateX(100%);
+  transition: transform 260ms cubic-bezier(.2, .7, .2, 1);
+}
+
+.mg-panel.mg-open { transform: none; }
+
+/* The UA rule for [hidden] loses to a class, so it has to be said again. */
+.mg-panel[hidden] { display: none; }
+
+.mg-panel-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0 6px;
+  background: var(--paper);
+}
+
+.mg-close {
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+}
+
+.mg-p-title {
+  font-family: var(--voice);
+  font-size: clamp(24px, 6vw, 29px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+/* Under the name, never over it: the colour and the word travel together, and
+   the word is the one that carries. */
+.mg-p-band {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 6px;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.mg-p-sep { color: var(--faint); }
+
+.mg-swatch {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--mg-band, var(--rule));
+}
+
+.mg-facts { margin-top: 20px; }
+
+.mg-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.mg-facts dt {
+  flex: none;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--quill);
+}
+
+.mg-facts dd {
+  text-align: right;
+  font-family: var(--voice);
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.mg-sec { margin-top: 24px; }
+
+.mg-sec h3 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--quill);
+}
+
+.mg-why {
+  margin-top: 12px;
+  font-family: var(--voice);
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.mg-ev { margin-top: 14px; list-style: none; }
+
+.mg-ev li {
+  padding-left: 13px;
+  border-left: 2px solid var(--rule);
+}
+
+.mg-ev li + li { margin-top: 16px; }
+
+.mg-ev-src {
+  font-family: var(--ledger);
+  font-size: 12px;
+  color: var(--blue-deep);
+}
+
+.mg-ev-src .mg-num { color: var(--blue-deep); }
+
+.mg-ev-text {
+  margin-top: 5px;
+  font-family: var(--voice);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* The repository's own notation, quoted rather than paraphrased. */
+.mg-code {
+  padding: 1px 5px;
+  background: var(--wash-2);
+  border-radius: 4px;
+  font-family: var(--ledger);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.mg-empty {
+  margin-top: 12px;
+  font-family: var(--voice);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--quill);
+}
+
+/* -------------------------------------------------------------- the rail */
+
+.mg-rail { padding-top: 22px; }
+
+.mg-rail-h {
+  margin: 22px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--quill);
+}
+
+.mg-rail-h:first-child { margin-top: 0; }
+
+.mg-legend, .mg-jumps { list-style: none; }
+
+.mg-leg {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.mg-leg-name {
+  flex: 1;
+  font-family: var(--voice);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.mg-leg .mg-num { font-size: 13px; }
+
+.mg-jump {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mg-jump:hover { background: var(--blue-mist); }
+.mg-jump:focus-visible { outline: 2px solid var(--blue-deep); outline-offset: 1px; }
+
+.mg-jump-name {
+  display: block;
+  font-family: var(--voice);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.mg-jump-meta {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--ui);
+  font-size: 11.5px;
+  color: var(--quill);
+}
+
+.mg-rail-note {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
+  font-family: var(--voice);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--quill);
+}
+
+/* --------------------------------------------------------------- the phone */
+
+@media (max-width: 560px) {
+  .mg-head { padding: 14px 16px 10px; }
+  .mg-bar { padding: 0 16px 10px; }
+  .mg-banner { font-size: 13px; }
+  /* A full-height sheet, not a drawer with a sliver of canvas beside it. */
+  .mg-panel { width: 100%; padding: 0 18px 40px; border-left: 0; }
+  .mg-hint { font-size: 10.5px; left: 10px; bottom: 10px; }
+}
+
+/* Every focusable thing on this screen, including the ones the shared sheet
+   never sees. */
+.mg-btn:focus-visible,
+.mg-close:focus-visible {
+  outline: 2px solid var(--blue-deep);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mg-canvas.mg-glide,
+  .mg-panel,
+  .mg-node { transition: none; }
+}

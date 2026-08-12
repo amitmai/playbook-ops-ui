@@ -23,7 +23,12 @@ and both are first-class:
 **A normal queue is 20 to 40 open tasks.** That is past the point where a flat
 list works: urgency has to separate itself without the CSM applying a filter.
 
-Secondary, today: Amit and a few colleagues evaluating whether this way of
+**Secondary: a CS manager.** They do not work the queue. They ask which
+engagements are going to close, which are drifting, and what the evidence for
+that is. Added 2026-08-12; served today by a mock, because the query behind it
+does not exist yet.
+
+Also secondary: Amit and a few colleagues evaluating whether this way of
 running playbooks is worth adopting.
 
 ## Product Purpose
@@ -58,6 +63,13 @@ permissions are ordinary infrastructure rather than a vendor's database.
   of attempts routes the client somewhere else rather than looping forever.
 - Clients cross between playbooks mid-engagement; renewal hands to cancel from
   four different phases.
+- **A CSM also owes work the playbook never created** — send the sheet, find
+  out who signs, read the reports before the call. These are ad-hoc follow-ups.
+  They carry no routing and they sit in the same queue, because a CSM's day is
+  not sorted by which system made the task.
+- **An engagement is also a history.** The transition log answers "why does
+  this task exist"; drawn as time it answers "what happened to this client",
+  which is the question asked before a save call and in every review.
 
 ## Capabilities and Constraints
 
@@ -74,11 +86,21 @@ permissions are ordinary infrastructure rather than a vendor's database.
 - **Nothing reads client replies.** Any future outcome suggestion would be a
   structural guess, not evidence. Confirmed with Amit: the interface should show
   the CONSEQUENCE of each choice rather than recommend one.
+- **It runs with no token at all.** With nothing saved it serves a sample book
+  of five invented nonprofits, shaped exactly like the API's data so there is
+  one rendering path rather than two. Every screen says it is the sample, and
+  every write is refused rather than silently skipped.
+- **Some controls are drawn and not built**, and say so when pressed: postpone
+  by a day, postpone by three days, closing an ad-hoc follow-up, and the whole
+  manager's view. Engagement timelines exist in the sample only; a connected
+  repository says the history is not compiled yet rather than inventing one.
 
 ## Brand Commitments
 
-None binding. This is an internal operating tool, not a CauseMatch-branded
-surface. No logo, no brand palette supplied.
+No logo and no brand palette were supplied, and this is an internal operating
+tool rather than a CauseMatch-facing surface. One direction is set, by Amit on
+2026-08-12: **white, light blue, a little gold, and Jewish.** Built as a tallit
+and an illuminated page — see DESIGN.md. Not a symbol applied to a tool.
 
 ## Evidence on Hand
 
@@ -90,8 +112,10 @@ surface. No logo, no brand palette supplied.
 
 ## Product Principles
 
-1. **The queue is the product.** A CSM's day is "what do I owe today", and
-   everything else is in service of that.
+1. **The queue is the product, and it leads with the task.** A CSM's day is
+   "what do I owe today". The task name is the answer; the client answers "for
+   whom", which is the second question and therefore the second line. Changed
+   by Amit 2026-08-12, reversing the first build's client-first card.
 2. **Show consequence, never advice.** For each possible outcome, show where the
    client lands. Do not recommend one; the CSM decides and the click is the
    record.
@@ -101,6 +125,9 @@ surface. No logo, no brand palette supplied.
    dense and keyboard-friendly at a desk.
 5. **Never let a wait look like a failure.** Actions take seconds; the interface
    says what is happening and what already succeeded.
+6. **A control that is not built says so.** Drawing the shape of a screen
+   before the wiring exists is legitimate and useful. Letting a person press it
+   and guess whether anything happened is not.
 
 ## Accessibility & Inclusion
 

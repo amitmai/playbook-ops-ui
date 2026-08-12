@@ -1,0 +1,137 @@
+/* The tallit and the illuminated page.
+ *
+ * A tallit is white cloth with techelet stripes; a Jewish illuminated page adds
+ * gold leaf, sparingly, only where it means something. That is the whole world:
+ * white ground, one blue, and gold used as an accent and never as decoration.
+ *
+ * Every token lives here so the four surfaces — the queue, the engagement
+ * timeline, the manager's tree and the chrome — cannot drift apart.
+ * Load order: theme.css first, then styles.css, then per-surface sheets.
+ */
+
+/* ------------------------------------------------------------------- fonts */
+
+/* Archivo — the chrome. Labels, buttons, small print. */
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-400-latin.woff2") format("woff2");
+             font-weight: 400; font-display: swap; }
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-500-latin.woff2") format("woff2");
+             font-weight: 500; font-display: swap; }
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-600-latin.woff2") format("woff2");
+             font-weight: 600; font-display: swap; }
+@font-face { font-family: "Archivo"; src: url("fonts/archivo-700-latin.woff2") format("woff2");
+             font-weight: 700; font-display: swap; }
+
+/* Frank Ruhl Libre — the voice. A Hebrew serif drawn in 1908 and redrawn for
+   Haaretz, with a Latin companion. It carries headings, the task itself, and
+   the playbook's advice. Two subsets so a Hebrew client name sets correctly. */
+@font-face { font-family: "Frank Ruhl"; src: url("fonts/frank-ruhl-400-latin.woff2") format("woff2");
+             font-weight: 400; font-display: swap;
+             unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+20AC, U+2122, U+2212; }
+@font-face { font-family: "Frank Ruhl"; src: url("fonts/frank-ruhl-400-hebrew.woff2") format("woff2");
+             font-weight: 400; font-display: swap;
+             unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
+@font-face { font-family: "Frank Ruhl"; src: url("fonts/frank-ruhl-500-latin.woff2") format("woff2");
+             font-weight: 500; font-display: swap;
+             unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+20AC, U+2122, U+2212; }
+@font-face { font-family: "Frank Ruhl"; src: url("fonts/frank-ruhl-500-hebrew.woff2") format("woff2");
+             font-weight: 500; font-display: swap;
+             unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
+@font-face { font-family: "Frank Ruhl"; src: url("fonts/frank-ruhl-700-latin.woff2") format("woff2");
+             font-weight: 700; font-display: swap;
+             unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+20AC, U+2122, U+2212; }
+@font-face { font-family: "Frank Ruhl"; src: url("fonts/frank-ruhl-700-hebrew.woff2") format("woff2");
+             font-weight: 700; font-display: swap;
+             unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
+
+/* Courier Prime — the ledger. Numbers, dates, issue references. Kept from the
+   promptbook build because a record of what happened is typed, not set. */
+@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-400-latin.woff2") format("woff2");
+             font-weight: 400; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-700-latin.woff2") format("woff2");
+             font-weight: 700; font-display: swap; }
+@font-face { font-family: "Courier Prime"; src: url("fonts/courier-prime-400-italic-latin.woff2") format("woff2");
+             font-weight: 400; font-style: italic; font-display: swap; }
+
+/* ------------------------------------------------------------------ tokens */
+
+:root {
+  /* Ground. White is the page; the wash is the room the page sits in. */
+  --paper:       #FFFFFF;
+  --wash:        #F3F8FC;
+  --wash-2:      #E8F1F8;
+
+  /* Ink. Navy rather than black, so it sits with the blue instead of fighting it. */
+  --ink:         #0F2231;
+  --ink-2:       #2C4557;
+  --quill:       #5C7688;   /* secondary text */
+  --faint:       #93A9B8;   /* placeholders, trails */
+
+  /* Rules. */
+  --rule:        #D3E2ED;
+  --rule-soft:   #E7F0F7;
+
+  /* Techelet — the tallit stripe. The one blue, and the primary. */
+  --blue:        #1B6FA8;
+  --blue-deep:   #10496F;
+  --blue-lit:    #4699D2;
+  --blue-wash:   #DCEBF7;
+  --blue-mist:   #EFF7FD;
+
+  /* Gold leaf. Accent only: the live line, a seal, a rule under a heading.
+     If gold is carrying more than one meaning on a screen, it is overused. */
+  --gold:        #A9801F;
+  --gold-lit:    #C9A33F;
+  --gold-bright: #E0BE63;
+  --gold-wash:   #FBF2DC;
+  --gold-mist:   #FDF9EF;
+
+  /* Meaning colours. Never the sole carrier — always with a word and a position. */
+  --late:        #A5322B;
+  --late-wash:   #FAE9E7;
+  --good:        #2C6A50;
+  --good-wash:   #E5F1EB;
+  --warn:        #9A6510;
+  --warn-wash:   #FBF0DC;
+
+  /* Playbook identity. Woven bands, not buttons. */
+  --band-renewal: #1B6FA8;
+  --band-cancel:  #A5322B;
+  --band-expand:  #6B5FA8;
+  --band-expand-wash: #EFEDF8;
+  --band-nurture: #2C6A50;
+
+  /* Gold as components, for the one place a colour has to be faded to nothing:
+     the standby pulse. Kept here so no other file declares a colour. */
+  --gold-rgb: 169, 128, 31;
+
+  /* Type roles. */
+  --ui:      "Archivo", system-ui, -apple-system, sans-serif;
+  --voice:   "Frank Ruhl", "Frank Ruhl Libre", Georgia, "Times New Roman", serif;
+  --ledger:  "Courier Prime", "Courier New", Courier, monospace;
+
+  --gut: 20px;
+  --radius: 14px;
+  --radius-sm: 9px;
+
+  /* One elevation, and it is a border plus the faintest lift. No drop shadows
+     stacked on drop shadows. */
+  --lift: 0 1px 2px rgba(15, 34, 49, .04);
+  --lift-2: 0 10px 30px -18px rgba(15, 34, 49, .45);
+}
+
+/* The tallit stripe. A repeating band used under section heads and as the
+   engagement lane rule. Two weights of techelet on white, the way the cloth is
+   actually woven. */
+.tallit-rule {
+  height: 4px;
+  background:
+    repeating-linear-gradient(90deg,
+      var(--blue) 0 14px,
+      transparent 14px 20px,
+      var(--blue-lit) 20px 27px,
+      transparent 27px 40px);
+  opacity: .8;
+}
+
+/* A gold hairline. Used once per screen, under the thing that is live. */
+.gold-rule { height: 2px; background: linear-gradient(90deg, var(--gold), var(--gold-bright) 40%, transparent); }
