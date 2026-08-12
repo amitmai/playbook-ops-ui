@@ -175,6 +175,11 @@ function stateOf(iss) {
       out.due_at = blob.due_at;
       out.engagement = blob.engagement;
       out.todo_note = blob.todo_note;
+      // When the engagement actually opened, as opposed to when the issue row
+      // was written. They are the same thing for an engagement the engine
+      // started and different for a seeded history.
+      out.opened_at = blob.opened_at;
+      out.ended_at = blob.ended_at;
     } catch {}
   }
   if (!out.client_name) out.client_name = out.client || "";
@@ -944,6 +949,239 @@ async function pick(iss, s, ph, slug, btn) {
   }
 }
 
+/* ------------------------------------------------- the engagement as history */
+
+/* THE TRANSITION LOG IS THE TIMELINE.
+ *
+ * PRODUCT.md already says what an engagement is: "the spine … carrying the
+ * transition log", and that the log "is the answer to why does this task
+ * exist". So the timeline is not a second record that has to be kept in step
+ * with the first — it is that same log, drawn. Every transition the engine
+ * writes carries the phase it left, the outcome picked, the phase it opened,
+ * who picked it and WHEN, which is exactly a Gantt chart in prose.
+ *
+ * Deriving it from the log rather than from issue timestamps also happens to
+ * be the only thing that CAN work: GitHub will not let anything set an issue's
+ * created_at, so a seeded history would otherwise collapse to zero-length bars
+ * all starting today.
+ *
+ * Nothing here is invented. A bar exists because a transition says the client
+ * was in that phase between two stamps. A bubble is a fact the log states —
+ * a crossing between playbooks, attempts running out, an end state, a stretch
+ * with nothing recorded, or a human comment somebody left. Where the log says
+ * nothing, the timeline says nothing.
+ */
+
+const REC = {
+  from:    /-\s*\*\*From:\*\*\s*`([^`]+)`/,
+  to:      /-\s*\*\*To:\*\*\s*`([^`]+)`/,
+  outcome: /-\s*\*\*Outcome:\*\*\s*(.+?)\s*\(`([^`]+)`\)/,
+  when:    /-\s*\*\*When:\*\*\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/,
+  attempt: /-\s*\*\*Playbook:\*\*\s*\S+\s*v\d+,\s*attempt\s*(\d+)/,
+  exhaust: /\*\*Attempt limit reached\*\*/,
+};
+
+const dayOf = (iso) => String(iso || "").slice(0, 10);
+
+function parseLog(comments) {
+  const records = [];
+  const notes = [];
+  let openedAt = null;
+
+  for (const c of comments || []) {
+    const body = c.body || "";
+    if (/^\s*\*\*Transition\*\*/.test(body)) {
+      const from = REC.from.exec(body), to = REC.to.exec(body), when = REC.when.exec(body);
+      if (!from || !to || !when) continue;
+      const out = REC.outcome.exec(body);
+      const att = REC.attempt.exec(body);
+      records.push({
+        from: from[1], to: to[1], when: when[1],
+        outcome: out ? out[1].trim() : null,
+        slug: out ? out[2] : null,
+        attempt: att ? parseInt(att[1], 10) : 1,
+        exhausted: REC.exhaust.test(body),
+        actor: (/-\s*\*\*Picked by:\*\*\s*@(\S+)/.exec(body) || [])[1] || null,
+      });
+      continue;
+    }
+    if (/^Engagement opened by/.test(body)) {
+      // Seeded history carries the real opening date here, because a comment's
+      // own created_at is the moment it was seeded. A real engagement has no
+      // such line and falls back to the issue's created_at, which is correct.
+      const w = REC.when.exec(body) || /opened on\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/.exec(body);
+      if (w) openedAt = w[1];
+      continue;
+    }
+    notes.push({ date: dayOf(c.created_at), body, actor: (c.user || {}).login });
+  }
+  records.sort((a, b) => a.when.localeCompare(b.when));
+  return { records, notes, openedAt };
+}
+
+/* Folds the log into one bar per visit to a phase. A self-transition is the
+   same visit one attempt later, not a new bar — the same rule the engine uses
+   when it decides whether to open a new issue. */
+function barsFromLog(records, start, end, pb) {
+  const phases = pb.phases || {};
+  const bars = [];
+  let cursor = start;
+  let current = records.length ? records[0].from : null;
+
+  for (const r of records) {
+    const ph = phases[r.from];
+    if (r.from === r.to) {
+      // Stayed put. Count the attempt against the open bar rather than opening
+      // a second one for the same visit.
+      if (bars.length && bars[bars.length - 1].phase === r.from) {
+        bars[bars.length - 1].attempts = Math.max(bars[bars.length - 1].attempts, r.attempt + 1);
+      } else {
+        bars.push(bar(r.from, ph, cursor, null, r.attempt + 1, null, "open"));
+      }
+      continue;
+    }
+    const open = bars.length && bars[bars.length - 1].phase === r.from && bars[bars.length - 1].to === null
+      ? bars.pop()
+      : null;
+    bars.push(bar(r.from, ph, open ? open.from : cursor, r.when,
+      Math.max(open ? open.attempts : 1, r.attempt), r.outcome,
+      r.exhausted ? "exhausted" : "done"));
+    cursor = r.when;
+    current = r.to;
+  }
+
+  if (current) {
+    const ph = phases[current];
+    const open = bars.length && bars[bars.length - 1].phase === current && bars[bars.length - 1].to === null
+      ? bars.pop() : null;
+    bars.push(bar(current, ph, open ? open.from : cursor, end,
+      open ? open.attempts : 1, null, end ? "done" : "current"));
+  }
+  return bars.filter((b) => b.label);
+
+  function bar(id, ph, from, to, attempts, outcome, state) {
+    return {
+      phase: id,
+      label: ph ? PBE.label(ph) : id,
+      playbook: ph ? ph.playbook : "renewal",
+      from, to, attempts, outcome, state,
+    };
+  }
+}
+
+function bubblesFromLog(records, notes, pb, end) {
+  const phases = pb.phases || {};
+  const out = [];
+  const title = (id) => (phases[id] ? PBE.label(phases[id]) : id);
+
+  let prev = null;
+  for (const r of records) {
+    const a = phases[r.from], b = phases[r.to];
+
+    if (a && b && a.playbook !== b.playbook) {
+      out.push({
+        date: r.when, kind: "cross",
+        title: `Crossed into ${(pb.playbooks[b.playbook] || {}).title || b.playbook}`,
+        detail: `${title(r.from)} → ${title(r.to)} on outcome "${r.outcome}". The engagement keeps its history across the crossing.`,
+      });
+    }
+    if (r.exhausted) {
+      out.push({
+        date: r.when, kind: "risk",
+        title: `Attempts ran out at ${title(r.from)}`,
+        detail: `${a && a.max_attempts ? a.max_attempts : r.attempt} attempts without progress, so the playbook routed to ${title(r.to)} rather than trying again.`,
+      });
+    }
+    if (b && b.terminal) {
+      const won = !/churn/i.test(r.to);
+      out.push({
+        date: r.when, kind: won ? "win" : "risk",
+        title: won ? `Ended: ${title(r.to)}` : `Churned`,
+        detail: `Recorded from ${title(r.from)} on outcome "${r.outcome}".`,
+      });
+    }
+    // A stretch where nothing was written down. Fourteen days is the point at
+    // which "in progress" and "forgotten" look the same from the outside.
+    if (prev) {
+      const gap = Math.round((new Date(r.when) - new Date(prev.when)) / 86400000);
+      if (gap >= 14) {
+        out.push({
+          date: prev.when, kind: "silence",
+          title: `${gap} days with nothing recorded`,
+          detail: `Between ${title(prev.to)} opening and the next outcome. The task was open the whole time.`,
+        });
+      }
+    }
+    prev = r;
+  }
+
+  for (const n of notes) {
+    const first = n.body.trim().split("\n")[0];
+    out.push({
+      date: n.date, kind: "note",
+      title: first.length > 74 ? first.slice(0, 74) + "…" : first,
+      detail: n.body.trim().slice(0, 400) + (n.body.trim().length > 400 ? "…" : ""),
+    });
+  }
+
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function timelineFromLog(engagement, comments, pb) {
+  const s = stateOf(engagement);
+  const { records, notes, openedAt } = parseLog(comments);
+  const start = openedAt || s.opened_at || dayOf(engagement.created_at);
+
+  /* An end state is a moment, not a stretch. When the last transition lands on
+     a terminal phase, the engagement ended THEN — on the date in the record —
+     not when somebody got round to closing the issue. Using closed_at drew a
+     "Churned" bar running from the churn to today, which reads as though the
+     client were still churning. */
+  const lastRec = records[records.length - 1];
+  const endPhase = lastRec ? pb.phases[lastRec.to] : null;
+  const terminal = !!(endPhase && endPhase.terminal);
+  const end = terminal ? lastRec.when
+    : engagement.state === "closed" ? dayOf(engagement.closed_at) || null
+    : null;
+
+  const bars = barsFromLog(records, start, end, pb).filter(
+    // An end state is a moment. Drawing it as a bar gives a zero-width sliver
+    // that says nothing the "Churned" bubble and the state chip do not.
+    (b) => !((pb.phases[b.phase] || {}).terminal && b.from === b.to)
+  );
+  if (!bars.length) return null;   // nothing recorded — say so, do not draw one
+
+  const days = Math.max(1, Math.round((new Date(end || Date.now()) - new Date(start)) / 86400000));
+  const lastBar = bars[bars.length - 1];
+  /* Read the ending off the engagement's own state and the terminal phase,
+     not off the name of the last bar. The last bar is now the last phase the
+     client actually spent time in, which for a churn is the save attempt. */
+  const churned = terminal
+    ? /churn/i.test(lastRec.to)
+    : (s.phase && /churn/i.test(s.phase)) || labelsOf(engagement).some((l) => /^state:churn/i.test(l));
+  const ended = terminal || engagement.state === "closed";
+  const retries = bars.filter((b) => b.attempts > 1).length;
+
+  const headline =
+    `${days} days, ${bars.length} phase${bars.length === 1 ? "" : "s"}` +
+    (retries ? `, ${retries} of them revisited` : "") +
+    (ended ? (churned ? ". Ended churned." : ". Ended won.") : `. Now at ${lastBar.label}.`);
+
+  return {
+    engagement: engagement.number,
+    client: s.client,
+    client_name: s.client_name,
+    owner: ((engagement.assignees || [])[0] || {}).login || "—",
+    playbook: s.playbook,
+    state: ended ? (churned ? "churned" : "won") : "live",
+    start, end,
+    headline,
+    bars,
+    bubbles: bubblesFromLog(records, notes, pb, end),
+    derived: true,
+  };
+}
+
 /* --------------------------------------------------------------- engagements */
 
 async function engagementsScreen(selected) {
@@ -964,11 +1202,31 @@ async function engagementsScreen(selected) {
   const desk = window.matchMedia("(min-width: 900px)").matches;
   const pick = selected || (desk && list[0] ? list[0].number : null);
 
+  /* Read the log for the one being shown, and only that one. It is a single
+     call, and fetching all five up front would be five calls to draw one
+     chart. A failure here is not fatal: the screen falls back to saying the
+     history is not available, which is what it did for every engagement
+     before this existed. */
+  let derived = null;
+  if (pick && !S.demo) {
+    const eng = list.find((e) => e.number === pick);
+    if (eng) {
+      try {
+        const comments = await api(`/repos/${S.repo}/issues/${pick}/comments?per_page=100`);
+        if (stale(seq)) return;
+        derived = timelineFromLog(eng, comments, S.pb);
+      } catch (e) {
+        console.warn(`transition log for #${pick} unavailable: ${e.message}`);
+      }
+    }
+  }
+
   ENGAGEMENTS.render(view(), railEl(), {
     engagements: list,
-    // In a connected repository the timeline is not compiled yet, so this
-    // returns null and the screen says so rather than inventing a history.
-    timelineFor: (n) => (S.demo ? DEMO.timelines[n] || null : null),
+    // Demo reads its own fixtures; a connected repository reads the engagement's
+    // transition log, which IS the history. Null means the log is empty or could
+    // not be read, and the screen says so rather than inventing one.
+    timelineFor: (n) => (S.demo ? DEMO.timelines[n] || null : n === pick ? derived : null),
     playbooks: S.pb,
     demo: S.demo,
     esc,

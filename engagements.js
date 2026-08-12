@@ -166,8 +166,19 @@ const ENGAGEMENTS = (() => {
         const s = data.stateOf(iss);
         const tl = data.timelineFor(iss.number);
         const ph = (data.playbooks.phases || {})[s.phase];
-        const started = day(iss.created_at) || today();
-        const ended = iss.closed_at ? day(iss.closed_at) : null;
+        /* When the engagement knows when it opened, believe THAT over the
+           issue's timestamps. An issue's created_at is when the row was
+           written, which for a seeded history is the moment it was seeded —
+           every engagement then reads as "0 days" while its own timeline says
+           93. The engagement's own opened_at, and the timeline derived from
+           its transition log, are the record; created_at is the filing date.
+           Real engagements carry no opened_at and fall back to it, which is
+           correct for them. */
+        // Through day() in every case: these are Date objects downstream, and
+        // span() subtracts them. A raw "2026-05-04" reads fine and arrives as
+        // NaN days.
+        const started = day(s.opened_at) || (tl && day(tl.start)) || day(iss.created_at) || today();
+        const ended = day(s.ended_at) || (tl && day(tl.end)) || (iss.closed_at ? day(iss.closed_at) : null);
         return {
           iss, s, tl, ph, started, ended,
           days: span(started, ended || today()),
